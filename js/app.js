@@ -27,7 +27,7 @@ const RENDERERS = {
 // Review/Settings have no capture action either -- no FAB on any of those three.
 const FAB_TABS = new Set(['today', 'journal', 'tasks']);
 
-let viewHost, tabBarEl, fabEl;
+let viewHost, tabBarEl, fabEl, appGearEl;
 let currentTab = null;
 
 function parseHash() {
@@ -56,6 +56,15 @@ async function boot() {
 
   fabEl = renderFab(handleFabAction);
   document.body.appendChild(fabEl);
+
+  // Persistent Settings gear on document.body -- kept OUT of the view-slots because their
+  // transform traps position:fixed. Stays docked top-right while page content scrolls.
+  appGearEl = document.createElement('button');
+  appGearEl.className = 'icon-btn app-gear topbar__gear';
+  appGearEl.setAttribute('aria-label', 'Settings');
+  appGearEl.innerHTML = iconGear();
+  appGearEl.addEventListener('click', () => { location.hash = '#/settings'; });
+  document.body.appendChild(appGearEl);
 
   on('settings-changed', async () => { applyTheme(await getSettings()); });
 
@@ -130,10 +139,9 @@ async function route() {
   incoming.classList.toggle('view-slot--full', isJournalWrite);
   currentTab = resolvedTab;
 
-  // Every view except the immersive writing screen and Settings itself gets a gear
-  // button wired into its topbar, top-right -- one shared implementation instead of
-  // duplicating the button/markup across 5 view files (v2.2: Settings off the tab bar).
-  if (!isJournalWrite && resolvedTab !== 'settings') wireHeaderGear(incoming);
+  // The persistent gear (on document.body) hides on the immersive writing screen and on
+  // Settings itself; everywhere else it stays fixed top-right, even while content scrolls.
+  appGearEl.classList.toggle('is-hidden', isJournalWrite || resolvedTab === 'settings');
 
   // Strip the one-shot action param from the URL so a reload doesn't re-trigger it
   // (segment/write/date are not one-shot, so preserve them if present).
@@ -145,17 +153,6 @@ async function route() {
     ].filter(Boolean).join('&');
     history.replaceState(null, '', `#/${resolvedTab}${kept ? '?' + kept : ''}`);
   }
-}
-
-function wireHeaderGear(incoming) {
-  const topbar = incoming.querySelector('.topbar');
-  if (!topbar) return;
-  const btn = document.createElement('button');
-  btn.className = 'icon-btn topbar__gear';
-  btn.setAttribute('aria-label', 'Settings');
-  btn.innerHTML = iconGear();
-  btn.addEventListener('click', () => { location.hash = '#/settings'; });
-  topbar.appendChild(btn);
 }
 
 boot();

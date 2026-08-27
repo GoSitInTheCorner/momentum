@@ -135,17 +135,18 @@ body::before {
   position: relative;
   padding: calc(20px + var(--safe-top)) 56px 8px 20px;
 }
-/* Gear button, injected by app.js into every view's topbar except Settings itself and
-   the immersive journal-writing screen (v2.2 -- Settings moved off the tab bar).
-   Doubled-up selector (.icon-btn.topbar__gear) so this wins specificity over the later
-   ".icon-btn { position: relative }" tap-target-expansion rule -- otherwise that rule
-   (same 1-class specificity, defined after this one) clobbers position:absolute and the
-   button falls into normal flow instead of docking to the top-right corner. */
-.icon-btn.topbar__gear {
-  position: absolute;
+/* Settings gear: a single persistent button on document.body (v2.2.2). Kept OUT of the
+   view-slots because their transform would trap position:fixed; on the body it stays
+   docked top-right while page content scrolls. app.js toggles .is-hidden on the immersive
+   writing screen and on Settings itself. Two-class selector so it wins over the later
+   ".icon-btn { position: relative }" tap-target rule (same 1-class specificity). */
+.icon-btn.app-gear {
+  position: fixed;
   top: calc(16px + var(--safe-top));
   right: calc(16px + var(--safe-right));
+  z-index: 30;
 }
+.app-gear.is-hidden { display: none; }
 .topbar__eyebrow {
   font-size: 12px;
   letter-spacing: 0.08em;
