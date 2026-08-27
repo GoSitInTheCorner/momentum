@@ -1,0 +1,102 @@
+# Momentum — Personal Growth Journal (v1 Spec)
+
+A mobile-first, offline-first PWA personal journal + growth tracker. Local-only data. No backend.
+
+## Target & Feel
+- **Device:** iPhone 16 Pro. Design to logical viewport **402 x 874 CSS px**, DPR 3. Respect safe-area insets (`env(safe-area-inset-*)`).
+- **UX model:** One full screen at a time, everything one tap away (like the Claude mobile app). Bottom tab bar + a floating **+** FAB (like Apple Notes). Smooth, calm, delightful. Satisfying check-off animation. No horizontal page scroll ever.
+- **Highly customizable** — settings are a first-class feature (see Settings).
+
+## Navigation
+Bottom tab bar, 5 tabs: **Today · Journal · Review · Goals · Settings**. Floating **+** FAB on Today/Journal for quick capture (task / log item / journal note via a small action sheet). Single-page app, hash-based routing, one view visible at a time with a quick fade/slide transition.
+
+## Screens
+
+### 1. Today (landing)
+- **Morning "Yesterday" recap card shown FIRST** (before today's content) when current time is before a configurable cutoff (default 12:00), or always if toggled. Recap shows: yesterday's completed tasks, done/learned items, and the 3 health ratings. Dismissable.
+- Today's **journal** entry (tap to edit, autosaves).
+- **To-dos** for today: add, check off (animated), reorder, optional link to a goal.
+- **Done / Learned** log: two quick-add streams ("I did…", "I learned…").
+- **Health sliders:** mental, emotional, physical (Brendon Burchard's three elements of health). Rating scale configurable (default 1–10). Optional custom dimensions.
+- FAB **+** for instant capture.
+
+### 2. Journal
+- All daily entries, newest first. Search. Tap a day to open its full day view (journal + that day's tasks/log/ratings).
+
+### 3. Review (the analytics/time-machine)
+- Period toggle: **Daily / Weekly / Monthly / Yearly / Custom range**.
+- Rollups for the selected period + charts (Chart.js):
+  - Health-rating **trend lines** (mental/emotional/physical) over the period.
+  - **Tasks completed** per day + current/longest **streak**.
+  - **Learning volume** (# learned items) and **done volume**.
+- **"Where to focus" panel:** flags the lowest-trending health dimension and goals with no recent linked activity; 1–2 plain-language suggestions.
+
+### 4. Goals
+- Create/edit goals: title, category, target date, milestones, notes.
+- Progress bar (from milestones checked and/or linked completed tasks).
+- Daily tasks can link to a goal → progress builds automatically.
+
+### 5. Settings (make this rich — "more customization the better")
+- **Appearance:** theme (Light / Dark / System / AMOLED-black), accent color picker, font family (System / Serif / Rounded / Mono / Dyslexia-friendly), font size scale (S–XL), line spacing, UI density (Comfortable/Compact), corner radius.
+- **Behavior:** default landing tab, "Yesterday recap" toggle + cutoff time, week starts on (Sun/Mon), date format, 12/24h time.
+- **Health tracking:** toggle each dimension, add custom dimensions, rating scale (1–5 / 1–10 / emoji).
+- **Journal:** default journal font/size, daily prompt toggle, markdown rendering toggle.
+- **Privacy / Lock:** passcode lock toggle (OFF by default), set/change passcode, auto-lock timeout.
+- **Data:** Export backup (JSON download), Import backup (JSON), storage usage readout, Clear all data (double-confirm).
+- All settings persist and apply live.
+
+## Added features (v1.1)
+
+### Beliefs & Views section (political views + other ideologies)
+- A reflective section for tracking political views and other ideologies/beliefs over time. Placed as a **segmented toggle inside the Journal tab** ([ Entries | Beliefs ]) to keep the 5-tab bar clean.
+- User defines **topics** (e.g. a policy area, an ideology, a philosophical question). Each topic has a **current stance** and a **dated history** of prior stances + notes, so you can see how a view evolved and *why* it changed.
+- Non-judgmental, private (local-only). Review can surface "views that changed recently."
+
+### Emotion Word Bank (popup)
+- A reusable **bottom-sheet popup** with a categorized **feelings-wheel taxonomy** (core emotions -> nuanced words), searchable.
+- Triggered from: the **journal editor** toolbar (inserts selected word(s) at the cursor) and **next to the Emotional-health slider** (tags the day's emotions).
+- Selected emotions are stored as tags on the day and can appear in Review (most-frequent emotions over a period).
+
+### Design principle: smart prefill (Apple Timer style)
+Prefill/suggest as much as possible, but every value stays user-changeable. Apply everywhere:
+- **Defaults:** new items default date/time = now; health sliders start at yesterday's values (midpoint if none); new goal category = most-used; belief category = 'political' or last-used.
+- **Tappable recents/presets:** show rows of recently/frequently used values to reuse in one tap — recent to-dos, most-used emotion words pinned atop the word bank, recent belief topics, goal-category chips, journal-prompt suggestions.
+- **Carry-overs:** yesterday's unfinished to-dos are suggested for today (prefilled, dismissable).
+- **Never trap the user:** any prefilled/suggested value can be edited or cleared. Prefill is a starting point, never a lock.
+
+## Data (IndexedDB via Dexie)
+- `days`: `date` (YYYY-MM-DD, PK), `journal` (text), `ratings` ({mental,emotional,physical,...custom}), `updatedAt`.
+- `tasks`: `id` (PK, auto), `date`, `text`, `done` (bool), `doneAt`, `goalId?`, `order`.
+- `logItems`: `id`, `date`, `type` ('done'|'learned'), `text`, `createdAt`.
+- `goals`: `id`, `title`, `category`, `targetDate?`, `milestones` (array of {text,done}), `notes`, `createdAt`, `archived`.
+- `days`: also add `emotions` (array of tag strings from the Emotion Word Bank).
+- `beliefs`: `id` (PK), `topic`, `category` ('political'|'ideology'|'other'|custom), `currentStance` (text), `history` (array of {date, stance, note}), `createdAt`, `updatedAt`.
+- `settings`: single record `id:'app'` holding all preferences.
+- Weekly/monthly/yearly views computed on the fly from `days`/`tasks`/`logItems`.
+
+## Tech
+- **Vanilla JS ES modules, NO build step.** Plain `<script type="module">`.
+- **Dexie.js** (IndexedDB wrapper) and **Chart.js** — **vendored locally** in `/vendor/` (NOT CDN) so the app is fully offline.
+- **PWA:** `manifest.webmanifest` + `sw.js` service worker that precaches the app shell + vendor libs for offline; installable "Add to Home Screen". App icons (maskable) in `/assets/`.
+- No external network calls at runtime.
+
+## File structure
+```
+momentum/
+  index.html
+  manifest.webmanifest
+  sw.js
+  css/styles.css
+  js/app.js  js/db.js  js/store.js  js/theme.js  js/analytics.js
+  js/views/{today,journal,review,goals,settings}.js
+  js/components/{tabbar,fab,slider,chart,sheet}.js
+  vendor/{dexie.min.js,chart.umd.min.js}
+  assets/{icon-192.png,icon-512.png,icon-maskable.png,favicon}
+  docs/SPEC.md
+```
+
+## Quality bar
+- Mobile-first, 402px, no horizontal scroll, safe-area aware, thumb-reachable.
+- Fast, no jank; autosave everywhere (no explicit save buttons).
+- Accessible: labels, sufficient contrast in both themes, tap targets >= 44px.
+- Clean modular code; each view/component isolated with a clear interface.
