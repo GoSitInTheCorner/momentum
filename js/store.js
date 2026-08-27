@@ -1,6 +1,6 @@
 // store.js — all reads/writes to IndexedDB funnel through here, plus a tiny
 // pub/sub bus so views can react to data changes without polling.
-import { db, todayStr } from './db.js';
+import { db, todayStr, addDays } from './db.js';
 
 const bus = new EventTarget();
 export function on(event, fn) { bus.addEventListener(event, fn); }
@@ -18,9 +18,6 @@ export const DEFAULT_SETTINGS = {
   density: 'comfortable',     // comfortable | compact
   radius: 'M',                // S | M | L
   landingTab: 'today',
-  recapEnabled: true,
-  recapAlways: false,
-  recapCutoff: '12:00',
   weekStart: 'sun',           // sun | mon
   dateFormat: 'MMM D',        // MMM D | D/M | M/D | YYYY-MM-DD
   timeFormat: '12',           // 12 | 24
@@ -37,6 +34,13 @@ export const DEFAULT_SETTINGS = {
   lockEnabled: false,
   passcodeHash: null,
   autoLockMinutes: 5,
+  birthDate: null,           // 'YYYY-MM-DD' or null
+  weatherCity: '',           // fallback city name, '' = unset
+  weatherUnits: 'F',         // 'C' | 'F'
+  newsTopic: '',             // '' = no filter, else a Noozra category slug
+  homeWidgets: {              // per-widget on/off, all default true
+    weather: true, news: true, wordOfDay: true, astrology: true, calendar: true, atAGlance: true,
+  },
 };
 
 export async function getSettings() {
@@ -46,7 +50,11 @@ export async function getSettings() {
     return { ...DEFAULT_SETTINGS };
   }
   // merge to backfill any new fields added since the record was created
-  return { ...DEFAULT_SETTINGS, ...s, healthDims: s.healthDims || DEFAULT_SETTINGS.healthDims };
+  return {
+    ...DEFAULT_SETTINGS, ...s,
+    healthDims: s.healthDims || DEFAULT_SETTINGS.healthDims,
+    homeWidgets: { ...DEFAULT_SETTINGS.homeWidgets, ...(s.homeWidgets || {}) },
+  };
 }
 
 export async function saveSettings(patch) {
@@ -129,6 +137,41 @@ export async function getTasksForGoal(goalId) {
 
 export async function getAllTasksInRange(startDate, endDate) {
   return db.tasks.where('date').between(startDate, endDate, true, true).toArray();
+}
+
+// ---------- Home calendar / streak helpers ----------
+// One combined range query (instead of four separate full-month scans from the
+// calendar view) that unions every date with any journal/ratings/emotions/task/log
+// activity into a single Set the calendar can just .has() against.
+export async function getActivityDatesInRange(startDate, endDate) {
+  const [days, tasks, log] = await Promise.all([
+    getDaysInRange(startDate, endDate),
+    getAllTasksInRange(startDate, endDate),
+    getLogInRange(startDate, endDate),
+  ]);
+  const set = new Set();
+  for (const d of days) {
+    if ((d.journal && d.journal.trim()) || Object.keys(d.ratings || {}).length || (d.emotions && d.emotions.length)) {
+      set.add(d.date);
+    }
+  }
+  for (const t of tasks) set.add(t.date);
+  for (const l of log) set.add(l.date);
+  return set;
+}
+
+// Consecutive days (walking backward from today, capped at a year) with any activity.
+export async function getActivityStreak() {
+  const end = todayStr();
+  const start = addDays(end, -365);
+  const activeDates = await getActivityDatesInRange(start, end);
+  let streak = 0;
+  let cursor = end;
+  while (activeDates.has(cursor)) {
+    streak++;
+    cursor = addDays(cursor, -1);
+  }
+  return streak;
 }
 
 // ---------- Log items (done / learned) ----------

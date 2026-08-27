@@ -17,7 +17,10 @@ const RENDERERS = {
   goals: renderGoals,
   settings: renderSettings,
 };
-const FAB_TABS = new Set(['today', 'journal']);
+// FAB stays on Home, Journal, and Goals -- Home has zero inline-edit affordances so it
+// needs the FAB most; Journal/Goals also keep their own inline "+ Add" controls for
+// adding directly in-context. Review/Settings have no capture action, so no FAB there.
+const FAB_TABS = new Set(['today', 'journal', 'goals']);
 
 let viewHost, tabBarEl, fabEl;
 let currentTab = null;
@@ -64,8 +67,18 @@ function navigateToTab(tab) {
   location.hash = `#/${tab}`;
 }
 
+// Each quick-capture action now routes to the deep tab that owns that widget (Home
+// itself has no inline editing) -- see docs/SPEC.md "Move daily doing/logging OFF
+// Home INTO deep tabs".
+const FAB_ROUTES = {
+  task: '#/goals?action=task',
+  done: '#/journal?segment=entries&action=done',
+  learned: '#/journal?segment=entries&action=learned',
+  journal: '#/journal?segment=entries&focus=1',
+};
+
 function handleFabAction(actionId) {
-  const newHash = `#/today?action=${actionId}`;
+  const newHash = FAB_ROUTES[actionId] || '#/today';
   const unchanged = location.hash === newHash;
   location.hash = newHash;
   // hashchange only fires when the hash string actually changes. If we're already on
@@ -83,8 +96,12 @@ async function route() {
   incoming.className = 'view-slot view-slot--enter';
 
   const opts = {};
-  if (resolvedTab === 'today' && params.action) opts.pendingAction = params.action;
-  if (resolvedTab === 'journal' && params.segment) opts.segment = params.segment;
+  if (resolvedTab === 'journal') {
+    if (params.segment) opts.segment = params.segment;
+    if (params.action) opts.pendingAction = params.action;
+    if (params.focus) opts.focus = true;
+  }
+  if (resolvedTab === 'goals' && params.action) opts.pendingAction = params.action;
 
   await renderer(incoming, opts);
 
@@ -101,8 +118,12 @@ async function route() {
   fabEl.classList.toggle('is-hidden', !FAB_TABS.has(resolvedTab));
   currentTab = resolvedTab;
 
-  // Strip one-shot action params from the URL so a reload doesn't re-trigger them.
-  if (params.action) history.replaceState(null, '', `#/${resolvedTab}`);
+  // Strip one-shot action/focus params from the URL so a reload doesn't re-trigger
+  // them (segment is not one-shot, so preserve it if present).
+  if (params.action || params.focus) {
+    const kept = params.segment ? `?segment=${params.segment}` : '';
+    history.replaceState(null, '', `#/${resolvedTab}${kept}`);
+  }
 }
 
 boot();

@@ -1,18 +1,37 @@
-// views/journal.js -- two segments in one screen: "Entries" (daily journal list +
-// search + day detail) and "Beliefs" (topics with dated stance history). A local
-// segmented toggle, not a 6th tab -- the bottom bar stays at 5 tabs per spec.
-import { getAllDaysSorted, getTasksForDate, getLogForDate, saveDay, getDay, getSettings } from '../store.js';
+// views/journal.js -- the deep daily-reflection tab. Two segments in one screen:
+// "Entries" (today's write-in-place reflection block, THEN search + reverse-chron list
+// + day detail) and "Beliefs" (topics with dated stance history). A local segmented
+// toggle, not a 6th tab -- the bottom bar stays at 5 tabs per spec.
+import {
+  getAllDaysSorted, getTasksForDate, getLogForDate, saveDay, getDay, getSettings,
+  addLogItem, deleteLogItem,
+} from '../store.js';
 import {
   getBeliefs, getBelief, addBelief, updateBeliefStanceText, addStanceUpdate, deleteBelief,
   getLastUsedBeliefCategory, getRecentBeliefTopics,
 } from '../store.js';
+import { todayStr, addDays } from '../db.js';
 import { openFormSheet, openPrompt } from '../components/sheet.js';
 import { openEmotionBank, mountEmotionTagRow } from '../components/emotionbank.js';
+import { createHealthSlider } from '../components/slider.js';
+import { wireAutosave } from '../components/savebadge.js';
 import { escapeHtml, formatDate, renderMarkdownLite } from '../util.js';
 
 const BELIEF_CATEGORIES = ['political', 'ideology', 'other'];
 
-export async function renderJournal(root, { segment = 'entries' } = {}) {
+// Rotating daily-prompt suggestions -- shared with today.js (Home's one-line reflection
+// prompt reuses promptsForToday()[0] above the "Write today's entry" CTA), so this lives
+// in exactly one place.
+const JOURNAL_PROMPTS = [
+  'What went well today?', 'What is on your mind?', 'What are you grateful for right now?',
+  'What felt hard today, and why?', 'What is one thing you want to remember about today?',
+];
+export function promptsForToday() {
+  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
+  return [0, 1, 2].map((i) => JOURNAL_PROMPTS[(dayOfYear + i) % JOURNAL_PROMPTS.length]);
+}
+
+export async function renderJournal(root, { segment = 'entries', pendingAction, focus } = {}) {
   const view = document.createElement('div');
   view.className = 'view view--journal';
   view.innerHTML = `
@@ -44,25 +63,176 @@ export async function renderJournal(root, { segment = 'entries' } = {}) {
   });
   setSegment(segment);
 
-  await renderEntriesPane(paneEntries);
+  await renderEntriesPane(paneEntries, { pendingAction, focus });
   await renderBeliefsPane(paneBeliefs);
 }
 
 // ---------------- Entries pane ----------------
-async function renderEntriesPane(pane) {
+async function renderEntriesPane(pane, { pendingAction, focus } = {}) {
+  const settings = await getSettings();
+  const date = todayStr();
+  const yDate = addDays(date, -1);
+
   pane.innerHTML = `
     <div class="search-bar">
       <svg viewBox="0 0 24 24" fill="none" class="search-bar__icon"><circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" stroke-width="1.8"/><path d="M20 20l-4.5-4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       <input type="text" placeholder="Search your journal..." id="journal-search" />
     </div>
     <div class="scroll-area">
+      <section class="card journal-card" id="today-reflect-card">
+        <div class="card__title-row">
+          <h2 class="card__title">Today's entry</h2>
+          <button class="icon-btn" id="journal-emo-btn" aria-label="Insert feeling word" title="Insert a feeling word">&#9786;</button>
+        </div>
+        <div class="journal-prompts" id="journal-prompts" hidden></div>
+        <textarea class="journal-input" id="journal-textarea" placeholder="What's on your mind today?" style="font-family:var(--journal-font); font-size:calc(1rem * var(--journal-scale));"></textarea>
+        <div class="autosave-hint" id="journal-hint">&nbsp;</div>
+      </section>
+
+      <section class="card">
+        <div class="card__title-row">
+          <h2 class="card__title">How are you?</h2>
+        </div>
+        <div class="health-row" id="health-row"></div>
+        <div class="emo-tag-mount" id="emo-tag-mount"></div>
+      </section>
+
+      <section class="card">
+        <div class="card__title-row">
+          <h2 class="card__title">Done &amp; learned</h2>
+        </div>
+        <div class="log-actions">
+          <button class="chip-btn chip-btn--done" id="add-done-btn">&#9679; I did...</button>
+          <button class="chip-btn chip-btn--learned" id="add-learned-btn">&#9670; I learned...</button>
+        </div>
+        <ul class="log-list" id="log-list"></ul>
+      </section>
+
       <ul class="entry-list" id="entry-list"></ul>
-      <p class="empty-hint" id="entry-empty" hidden>No entries yet. Start writing on Today.</p>
+      <p class="empty-hint" id="entry-empty" hidden>No entries yet. Start writing above.</p>
       <div class="scroll-spacer"></div>
     </div>
   `;
 
-  const settings = await getSettings();
+  // One shared "Saving… / Saved ✓" badge for the whole reflection block (journal text,
+  // sliders, log adds) -- matches the old single journal-hint UX, just now covering more.
+  const hint = pane.querySelector('#journal-hint');
+  const badge = wireAutosave(hint);
+
+  // ---- Journal textarea ----
+  const day = await getDay(date);
+  const yDay = await getDay(yDate);
+  const journalInput = pane.querySelector('#journal-textarea');
+  journalInput.value = day.journal || '';
+  const promptsEl = pane.querySelector('#journal-prompts');
+
+  let debounceTimer = null;
+  journalInput.addEventListener('input', () => {
+    promptsEl.hidden = true;
+    badge.saving();
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(async () => {
+      await saveDay(date, { journal: journalInput.value });
+      badge.saved();
+    }, 500);
+  });
+
+  // Smart prefill: lightweight prompt suggestions, tappable inserts, only while empty
+  // and only when the "Daily prompt" setting is on.
+  if (settings.dailyPrompt && !journalInput.value.trim()) {
+    promptsEl.hidden = false;
+    promptsEl.innerHTML = promptsForToday().map((p) => `<button type="button" class="preset-chip">${escapeHtml(p)}</button>`).join('');
+    promptsEl.querySelectorAll('.preset-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        journalInput.value = (journalInput.value ? journalInput.value + ' ' : '') + chip.textContent + ' ';
+        journalInput.focus();
+        journalInput.dispatchEvent(new Event('input'));
+      });
+    });
+  }
+
+  pane.querySelector('#journal-emo-btn').addEventListener('click', () => {
+    openEmotionBank({
+      mode: 'insert',
+      onInsert: (word) => {
+        const el = journalInput;
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? el.value.length;
+        el.value = el.value.slice(0, start) + word + el.value.slice(end);
+        el.focus();
+        el.selectionStart = el.selectionEnd = start + word.length;
+        el.dispatchEvent(new Event('input'));
+      },
+    });
+  });
+
+  if (focus) {
+    pane.querySelector('#today-reflect-card').scrollIntoView({ block: 'start' });
+    setTimeout(() => journalInput.focus(), 50);
+  }
+
+  // ---- Health sliders ----
+  // Smart prefill: default each slider to *yesterday's* rating for that dimension when
+  // today has none yet; fall back to the scale midpoint only if yesterday has no data
+  // either. Still fully draggable/editable -- nothing here is written until touched.
+  const healthRow = pane.querySelector('#health-row');
+  for (const dim of settings.healthDims.filter((d) => d.enabled)) {
+    const todayVal = day.ratings?.[dim.key];
+    const prefill = typeof todayVal === 'number' ? todayVal : yDay.ratings?.[dim.key];
+    const slider = createHealthSlider({
+      key: dim.key, label: dim.label, value: prefill, scale: settings.ratingScale,
+      onChange: async (v) => {
+        badge.saving();
+        const cur = await getDay(date);
+        await saveDay(date, { ratings: { ...cur.ratings, [dim.key]: v } });
+        badge.saved();
+      },
+    });
+    healthRow.appendChild(slider.el);
+  }
+
+  // Emotion tags for today, next to the health sliders (one shared component).
+  mountEmotionTagRow(pane.querySelector('#emo-tag-mount'), { date, tags: day.emotions || [] });
+
+  // ---- Done / learned log ----
+  async function refreshLog() {
+    const items = await getLogForDate(date);
+    const listEl = pane.querySelector('#log-list');
+    listEl.innerHTML = items.map((i) => `
+      <li class="log-row log-row--${i.type}" data-id="${i.id}">
+        <span class="log-row__dot">${i.type === 'done' ? '&#9679;' : '&#9670;'}</span>
+        <span class="log-row__text">${escapeHtml(i.text)}</span>
+        <button class="log-row__delete" aria-label="Delete">&times;</button>
+      </li>
+    `).join('');
+    listEl.querySelectorAll('.log-row__delete').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        badge.saving();
+        await deleteLogItem(Number(btn.closest('.log-row').dataset.id));
+        badge.saved();
+        refreshLog();
+      });
+    });
+  }
+  pane.querySelector('#add-done-btn').addEventListener('click', () => {
+    openPrompt({
+      title: 'I did...', placeholder: 'e.g. Went for a 20-min run', confirmLabel: 'Log it',
+      onSubmit: async (text) => { badge.saving(); await addLogItem(date, 'done', text); badge.saved(); refreshLog(); },
+    });
+  });
+  pane.querySelector('#add-learned-btn').addEventListener('click', () => {
+    openPrompt({
+      title: 'I learned...', placeholder: 'e.g. Async/await pitfalls in JS', confirmLabel: 'Log it',
+      onSubmit: async (text) => { badge.saving(); await addLogItem(date, 'learned', text); badge.saved(); refreshLog(); },
+    });
+  });
+  await refreshLog();
+
+  // ---- Handle FAB pending action (routed here via #/journal?segment=entries&action=X) ----
+  if (pendingAction === 'done') pane.querySelector('#add-done-btn').click();
+  if (pendingAction === 'learned') pane.querySelector('#add-learned-btn').click();
+
+  // ---- Entries list + search ----
   const days = (await getAllDaysSorted()).filter((d) => (d.journal && d.journal.trim()) || Object.keys(d.ratings || {}).length);
   const listEl = pane.querySelector('#entry-list');
   pane.querySelector('#entry-empty').hidden = days.length > 0;
@@ -86,7 +256,9 @@ async function renderEntriesPane(pane) {
   });
 }
 
-async function openDayDetail(date, settings) {
+// Exported so Home's calendar (and anywhere else) can open the same day-detail sheet
+// instead of duplicating this markup.
+export async function openDayDetail(date, settings) {
   const [tasks, log, day] = await Promise.all([getTasksForDate(date), getLogForDate(date), getDay(date)]);
 
   openFormSheet({
@@ -280,13 +452,14 @@ async function openBeliefDetail(id, onChange) {
 
         const stanceField = body.querySelector('#bd-stance');
         const hint = body.querySelector('#bd-hint');
+        const badge = wireAutosave(hint);
         let t;
         stanceField.addEventListener('input', () => {
-          hint.textContent = 'Saving...';
+          badge.saving();
           clearTimeout(t);
           t = setTimeout(async () => {
             await updateBeliefStanceText(b.id, stanceField.value);
-            hint.textContent = 'Saved';
+            badge.saved();
           }, 500);
         });
 

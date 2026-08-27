@@ -95,6 +95,32 @@ momentum/
   docs/SPEC.md
 ```
 
+## v2 — Home as an inviting launchpad (2026-08-27)
+
+Rationale: v1 Home was a form to fill out (uninviting) and the FAB overlapped on-screen controls (confusing). Fix: **Home = arrive & glance (no inline editing); deep tabs = focus & manage.** One clear rule kills the "+ vs on-screen" confusion.
+
+### Home ("Today") becomes a read-mostly launchpad, top -> bottom:
+1. **Greeting + full date** ("Thursday, August 27, 2026 - Good morning").
+2. **Weather** widget - [Open-Meteo](https://open-meteo.com/) (free, no key, CORS-ok). Uses geolocation (one-time permission) with a **city fallback set in Settings**; C/F toggle. Online-only; hides gracefully offline.
+3. **News peek** - [Noozra](https://noozra.com/api) (free JSON headlines, no key, open CORS). 2-3 headlines, tap to open. Online-only; hides offline. Topic configurable in Settings.
+4. **Word of the day** - a **curated, bundled JSON** of uncommon/beautiful words (word + part of speech + definition + example), picked by date (offline). PLUS a **look-up any word** search box via `https://api.dictionaryapi.dev/api/v2/entries/en/<word>` (free, no key; online-only).
+5. **Astrology** - **sun sign + moon sign computed locally** from the user's birth date (set in Settings; no API, offline). A daily-horoscope slot is present but disabled until a keyless source is configured (NO secret keys in this public app).
+6. **Reflection prompt + big "Write today's entry ->" CTA** - the single inviting action; opens the Journal deep entry.
+7. **Calendar** - month view; days with journal/activity get a dot/glow; tap a day -> opens that day's detail. Streak/ritual pull.
+8. **At-a-glance strip** (mood, top task, streak) - read-only; tapping routes to the deep tab.
+- Home has **no inline editing**. The **FAB = quick capture** from anywhere; deep tabs own the inline "+ Add" controls.
+
+### Move daily doing/logging OFF Home INTO deep tabs
+- **Journal tab** = deep daily reflection: write entry + 3 health sliders (mental/emotional/physical) + emotions + done/learned + past entries + Beliefs (existing segment).
+- **Goals tab** = "do": today's **to-dos** + goals/milestones.
+- **Review** unchanged (analytics). **Settings** gains: birth date, weather city + units, per-widget on/off toggles, news topic.
+
+### Save feedback (fixes "couldn't tell if it saved")
+Add a subtle **autosave status indicator** ("Saving..." -> "Saved ✓") visible wherever data changes (sliders, journal, todos, etc.). Autosave stays silent-fast but now confirms.
+
+### Constraints preserved
+402px mobile, PWA/offline for all CORE data. Weather/news/dictionary are additive ONLINE-only widgets (keyless; no secrets). App must fully function offline without them.
+
 ## Quality bar
 - Mobile-first, 402px, no horizontal scroll, safe-area aware, thumb-reachable.
 - Fast, no jank; autosave everywhere (no explicit save buttons).

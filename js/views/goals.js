@@ -1,11 +1,19 @@
-// views/goals.js -- create/edit goals, milestone checklists, progress bars.
+// views/goals.js -- the "do" tab: today's to-dos (moved from old Today), then
+// create/edit goals, milestone checklists, progress bars.
 import {
   getGoals, getGoal, addGoal, updateGoal, deleteGoal, goalProgress, getMostUsedGoalCategory,
+  getRecentTaskTexts, addTask,
 } from '../store.js';
-import { openFormSheet } from '../components/sheet.js';
+import { todayStr, addDays } from '../db.js';
+import { openFormSheet, openPrompt } from '../components/sheet.js';
+import { createTaskSection } from '../components/tasklist.js';
+import { wireAutosave } from '../components/savebadge.js';
 import { escapeHtml, formatDate } from '../util.js';
 
-export async function renderGoals(root) {
+export async function renderGoals(root, { pendingAction } = {}) {
+  const date = todayStr();
+  const yDate = addDays(date, -1);
+
   const view = document.createElement('div');
   view.className = 'view view--goals';
   view.innerHTML = `
@@ -14,6 +22,17 @@ export async function renderGoals(root) {
       <h1 class="topbar__title">Goals</h1>
     </header>
     <div class="scroll-area">
+      <section class="card">
+        <div class="card__title-row">
+          <h2 class="card__title">Today's to-dos</h2>
+          <button class="chip-btn" id="add-task-btn">+ Add</button>
+        </div>
+        <div class="carryover" id="carryover" hidden></div>
+        <ul class="task-list" id="task-list"></ul>
+        <p class="empty-hint" id="task-empty" hidden>Nothing yet -- tap + to add your first to-do.</p>
+        <div class="autosave-hint" id="task-hint">&nbsp;</div>
+      </section>
+
       <button class="btn btn--primary goals-new-btn" id="new-goal-btn">+ New goal</button>
       <ul class="goal-list" id="goal-list"></ul>
       <p class="empty-hint" id="goal-empty" hidden>No goals yet. Add one to start building momentum.</p>
@@ -22,6 +41,28 @@ export async function renderGoals(root) {
   `;
   root.appendChild(view);
 
+  // ---- Today's to-dos ----
+  const goals0 = await getGoals();
+  const badge = wireAutosave(view.querySelector('#task-hint'));
+  const taskSection = createTaskSection({ root: view, date, yDate, goals: goals0, badge });
+  await taskSection.refresh();
+
+  view.querySelector('#add-task-btn').addEventListener('click', async () => {
+    const presets = await getRecentTaskTexts(6);
+    openPrompt({
+      title: 'New to-do', placeholder: 'e.g. Finish project proposal', confirmLabel: 'Add', presets,
+      onSubmit: async (text) => {
+        badge.saving();
+        await addTask(date, text);
+        badge.saved();
+        taskSection.refresh();
+      },
+    });
+  });
+
+  if (pendingAction === 'task') view.querySelector('#add-task-btn').click();
+
+  // ---- Goals list ----
   async function refresh() {
     const goals = await getGoals();
     const listEl = view.querySelector('#goal-list');

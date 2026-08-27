@@ -16,7 +16,7 @@ export function formatDate(dateStr, format = 'MMM D') {
 
 export function formatWeekday(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
 // Small, safe markdown-lite renderer for the journal day-detail READ view (settings.markdownRender).
@@ -27,6 +27,19 @@ function inlineMarkdown(str) {
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+}
+
+// fetch() has no built-in timeout -- a hung/slow keyless API (no SLA, no key to escalate
+// with) would otherwise leave an online-only widget stuck on its skeleton forever instead
+// of degrading gracefully. Every cross-origin call in services/ goes through this.
+export async function fetchWithTimeout(url, { timeoutMs = 6000, ...opts } = {}) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...opts, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function renderMarkdownLite(text) {

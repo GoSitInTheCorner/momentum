@@ -1,411 +1,292 @@
-// views/today.js -- landing screen: yesterday recap, journal, to-dos, log streams, health sliders.
-import { todayStr, addDays } from '../db.js';
-import {
-  getDay, saveDay, getTasksForDate, addTask, toggleTask, updateTask, deleteTask, reorderTasks,
-  getLogForDate, addLogItem, deleteLogItem, getGoals, getSettings, getRecentTaskTexts,
-} from '../store.js';
-import { createHealthSlider } from '../components/slider.js';
-import { openPrompt, openSheet } from '../components/sheet.js';
-import { openEmotionBank, mountEmotionTagRow } from '../components/emotionbank.js';
+// views/today.js -- Home: a read-mostly launchpad. Arrive & glance, never edit here.
+// Deep editing lives on Journal (reflection + sliders + emotions + log) and Goals
+// (to-dos + goals). See docs/SPEC.md "v2 -- Home as an inviting launchpad".
+import { todayStr } from '../db.js';
+import { getSettings, getTasksForDate, getActivityStreak, getDay } from '../store.js';
+import { createHomeCalendar } from '../components/homecalendar.js';
+import { getWeather } from '../services/weather.js';
+import { getHeadlines } from '../services/news.js';
+import { wordForDate } from '../services/wordbank.js';
+import { lookupWord } from '../services/dictionary.js';
+import { promptsForToday } from './journal.js';
 import { escapeHtml, formatWeekday } from '../util.js';
 
-const JOURNAL_PROMPTS = [
-  'What went well today?', 'What is on your mind?', 'What are you grateful for right now?',
-  'What felt hard today, and why?', 'What is one thing you want to remember about today?',
+// ---------------- Astrology (fully offline) ----------------
+const ZODIAC = [
+  { sign: 'Capricorn', start: [12, 22], end: [1, 19], trait: 'disciplined and ambitious, always building toward something bigger' },
+  { sign: 'Aquarius', start: [1, 20], end: [2, 18], trait: 'independent and inventive, drawn to ideas ahead of their time' },
+  { sign: 'Pisces', start: [2, 19], end: [3, 20], trait: 'intuitive and compassionate, tuned into others’ feelings' },
+  { sign: 'Aries', start: [3, 21], end: [4, 19], trait: 'bold and direct, first to jump in' },
+  { sign: 'Taurus', start: [4, 20], end: [5, 20], trait: 'steady and grounded, values comfort and follow-through' },
+  { sign: 'Gemini', start: [5, 21], end: [6, 20], trait: 'curious and quick-witted, energized by conversation' },
+  { sign: 'Cancer', start: [6, 21], end: [7, 22], trait: 'nurturing and perceptive, guided by feeling' },
+  { sign: 'Leo', start: [7, 23], end: [8, 22], trait: 'warm and confident, happiest in the spotlight' },
+  { sign: 'Virgo', start: [8, 23], end: [9, 22], trait: 'precise and thoughtful, finds order in the details' },
+  { sign: 'Libra', start: [9, 23], end: [10, 22], trait: 'diplomatic and fair, drawn to balance and beauty' },
+  { sign: 'Scorpio', start: [10, 23], end: [11, 21], trait: 'intense and resolute, all-or-nothing by nature' },
+  { sign: 'Sagittarius', start: [11, 22], end: [12, 21], trait: 'adventurous and optimistic, always eyeing the next horizon' },
 ];
-function promptsForToday() {
-  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / 86400000);
-  return [0, 1, 2].map((i) => JOURNAL_PROMPTS[(dayOfYear + i) % JOURNAL_PROMPTS.length]);
+
+function sunSignFor(birthDate) {
+  const parts = (birthDate || '').split('-').map(Number);
+  const m = parts[1], d = parts[2];
+  if (!m || !d) return null;
+  for (const z of ZODIAC) {
+    const [sm, sd] = z.start;
+    const [em, ed] = z.end;
+    if (sm <= em) {
+      if ((m === sm && d >= sd) || (m === em && d <= ed) || (m > sm && m < em)) return z;
+    } else {
+      // Wraps the year boundary (Capricorn: Dec 22 -> Jan 19).
+      if ((m === sm && d >= sd) || (m === em && d <= ed)) return z;
+    }
+  }
+  return null;
 }
 
-let debounceTimer = null;
-function debounce(fn, ms = 500) {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(fn, ms);
+function moonPhase(date = new Date()) {
+  const synodic = 29.53058867;
+  const knownNewMoon = Date.UTC(2000, 0, 6, 18, 14, 0); // a known new moon reference
+  const diffDays = (date.getTime() - knownNewMoon) / 86400000;
+  const age = ((diffDays % synodic) + synodic) % synodic;
+  const index = Math.floor((age / synodic) * 8 + 0.5) % 8;
+  const names = ['New Moon', 'Waxing Crescent', 'First Quarter', 'Waxing Gibbous', 'Full Moon', 'Waning Gibbous', 'Last Quarter', 'Waning Crescent'];
+  const emoji = ['\u{1F311}', '\u{1F312}', '\u{1F313}', '\u{1F314}', '\u{1F315}', '\u{1F316}', '\u{1F317}', '\u{1F318}'];
+  return { name: names[index], emoji: emoji[index] };
 }
 
-export async function renderToday(root, { pendingAction } = {}) {
+// ---------------- Mood (at-a-glance) ----------------
+const MOOD_EMOJI = ['\u{1F61E}', '\u{1F615}', '\u{1F610}', '\u{1F642}', '\u{1F604}'];
+function moodFor(day, ratingScale) {
+  if (day.emotions && day.emotions.length) return { kind: 'word', value: day.emotions[day.emotions.length - 1] };
+  const vals = Object.values(day.ratings || {}).filter((v) => typeof v === 'number');
+  if (!vals.length) return null;
+  const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+  const max = ratingScale === '5' || ratingScale === 'emoji' ? 5 : 10;
+  const idx = Math.max(0, Math.min(MOOD_EMOJI.length - 1, Math.round(((avg - 1) / (max - 1)) * (MOOD_EMOJI.length - 1))));
+  return { kind: 'emoji', value: MOOD_EMOJI[idx] };
+}
+
+export async function renderToday(root) {
   const settings = await getSettings();
   const date = todayStr();
-  const yDate = addDays(date, -1);
+  const w = settings.homeWidgets || {};
 
   const view = document.createElement('div');
   view.className = 'view view--today';
-
-  const showRecap = settings.recapEnabled && !isRecapDismissedToday() &&
-    (settings.recapAlways || isBeforeCutoff(settings.recapCutoff));
-
   view.innerHTML = `
     <header class="topbar">
-      <div class="topbar__eyebrow">${formatWeekday(date)}</div>
-      <h1 class="topbar__title">Today</h1>
+      <div class="topbar__eyebrow">${greeting()}</div>
+      <h1 class="topbar__title">${formatWeekday(date)}</h1>
     </header>
     <div class="scroll-area">
-      ${showRecap ? `<section class="recap" id="recap"></section>` : ''}
-      <section class="card journal-card">
-        <div class="card__title-row">
-          <h2 class="card__title">Today's entry</h2>
-          <button class="icon-btn" id="journal-emo-btn" aria-label="Insert feeling word" title="Insert a feeling word">&#9786;</button>
-        </div>
-        <div class="journal-prompts" id="journal-prompts" hidden></div>
-        <textarea class="journal-input" placeholder="What's on your mind today?" style="font-family:var(--journal-font); font-size:calc(1rem * var(--journal-scale));"></textarea>
-        <div class="autosave-hint" id="journal-hint">&nbsp;</div>
+      <section class="card home-widget home-widget--weather" id="w-weather" ${w.weather ? '' : 'hidden'}></section>
+      <section class="card home-widget home-widget--news" id="w-news" ${w.news ? '' : 'hidden'}></section>
+      <section class="card home-widget home-widget--word" id="w-word" ${w.wordOfDay ? '' : 'hidden'}></section>
+      <section class="card home-widget home-widget--astro" id="w-astro" ${w.astrology ? '' : 'hidden'}></section>
+
+      <section class="card home-cta-card">
+        <p class="home-cta__prompt" id="home-prompt">${escapeHtml(promptsForToday()[0])}</p>
+        <button class="btn btn--home-cta" id="home-cta-btn">Write today's entry &rarr;</button>
       </section>
 
-      <section class="card">
-        <div class="card__title-row">
-          <h2 class="card__title">To-dos</h2>
-          <button class="chip-btn" id="add-task-btn">+ Add</button>
-        </div>
-        <div class="carryover" id="carryover" hidden></div>
-        <ul class="task-list" id="task-list"></ul>
-        <p class="empty-hint" id="task-empty" hidden>Nothing yet -- tap + to add your first to-do.</p>
+      <section class="card home-widget home-widget--calendar" id="w-calendar" ${w.calendar ? '' : 'hidden'}>
+        <div class="card__title-row"><h2 class="card__title">Your month</h2></div>
+        <div id="home-cal-mount"></div>
       </section>
 
-      <section class="card">
-        <div class="card__title-row">
-          <h2 class="card__title">Done &amp; learned</h2>
-        </div>
-        <div class="log-actions">
-          <button class="chip-btn chip-btn--done" id="add-done-btn">&#9679; I did...</button>
-          <button class="chip-btn chip-btn--learned" id="add-learned-btn">&#9670; I learned...</button>
-        </div>
-        <ul class="log-list" id="log-list"></ul>
-      </section>
-
-      <section class="card">
-        <div class="card__title-row">
-          <h2 class="card__title">How are you?</h2>
-        </div>
-        <div class="health-row" id="health-row"></div>
-        <div class="emo-tag-mount" id="emo-tag-mount"></div>
-      </section>
+      <section class="card home-widget home-widget--glance" id="w-glance" ${w.atAGlance ? '' : 'hidden'}></section>
       <div class="scroll-spacer"></div>
     </div>
   `;
   root.appendChild(view);
 
-  // ---- Journal ----
-  const day = await getDay(date);
-  const yDay = await getDay(yDate);
-  const journalInput = view.querySelector('.journal-input');
-  journalInput.value = day.journal || '';
-  const hint = view.querySelector('#journal-hint');
-  const promptsEl = view.querySelector('#journal-prompts');
-
-  journalInput.addEventListener('input', () => {
-    promptsEl.hidden = true;
-    hint.textContent = 'Saving...';
-    debounce(async () => {
-      await saveDay(date, { journal: journalInput.value });
-      hint.textContent = 'Saved';
-      setTimeout(() => { if (hint.textContent === 'Saved') hint.textContent = ' '; }, 1500);
-    }, 500);
+  view.querySelector('#home-cta-btn').addEventListener('click', () => {
+    location.hash = '#/journal?segment=entries&focus=1';
   });
 
-  // Smart prefill: lightweight prompt suggestions, tappable inserts, only while empty
-  // and only when the "Daily prompt" setting is on.
-  if (settings.dailyPrompt && !journalInput.value.trim()) {
-    promptsEl.hidden = false;
-    promptsEl.innerHTML = promptsForToday().map((p) => `<button type="button" class="preset-chip">${escapeHtml(p)}</button>`).join('');
-    promptsEl.querySelectorAll('.preset-chip').forEach((chip) => {
-      chip.addEventListener('click', () => {
-        journalInput.value = (journalInput.value ? journalInput.value + ' ' : '') + chip.textContent + ' ';
-        journalInput.focus();
-        journalInput.dispatchEvent(new Event('input'));
-      });
-    });
+  if (w.calendar) {
+    view.querySelector('#home-cal-mount').appendChild(createHomeCalendar({ settings }));
   }
 
-  view.querySelector('#journal-emo-btn').addEventListener('click', () => {
-    openEmotionBank({
-      mode: 'insert',
-      onInsert: (word) => {
-        const el = journalInput;
-        const start = el.selectionStart ?? el.value.length;
-        const end = el.selectionEnd ?? el.value.length;
-        el.value = el.value.slice(0, start) + word + el.value.slice(end);
-        el.focus();
-        el.selectionStart = el.selectionEnd = start + word.length;
-        el.dispatchEvent(new Event('input'));
-      },
-    });
-  });
+  // Each widget below fails independently -- a broken one collapses to nothing,
+  // it never breaks the rest of the page.
+  if (w.weather) renderWeatherWidget(view.querySelector('#w-weather'), settings);
+  if (w.news) renderNewsWidget(view.querySelector('#w-news'), settings);
+  if (w.wordOfDay) renderWordWidget(view.querySelector('#w-word'), date);
+  if (w.astrology) renderAstroWidget(view.querySelector('#w-astro'), settings);
+  if (w.atAGlance) renderGlanceWidget(view.querySelector('#w-glance'), settings, date);
+}
 
-  // ---- Recap ----
-  if (showRecap) {
-    await renderRecap(view.querySelector('#recap'), yDate);
-  }
+function greeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
 
-  // ---- Tasks ----
-  const goals = await getGoals();
-
-  async function refreshTasks() {
-    const tasks = await getTasksForDate(date);
-    const listEl = view.querySelector('#task-list');
-    view.querySelector('#task-empty').hidden = tasks.length > 0;
-    listEl.innerHTML = tasks.map((t) => taskRowHTML(t, goals)).join('');
-    wireTaskRows(listEl);
-    await refreshCarryover(tasks);
-  }
-
-  function wireTaskRows(listEl) {
-    listEl.querySelectorAll('.task-row').forEach((row) => {
-      const id = Number(row.dataset.id);
-      row.querySelector('.task-check').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        row.classList.add('is-animating');
-        const done = await toggleTask(id);
-        row.classList.toggle('is-done', done);
-        setTimeout(() => refreshTasks(), done ? 550 : 0);
-      });
-      row.querySelector('.task-delete').addEventListener('click', async (e) => {
-        e.stopPropagation();
-        await deleteTask(id);
-        refreshTasks();
-      });
-      const linkBtn = row.querySelector('.task-link');
-      if (linkBtn) linkBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openSheet({
-          title: 'Link to a goal',
-          actions: [
-            { id: 'none', label: 'No goal', hint: 'Remove link', icon: '&mdash;' },
-            ...goals.map((g) => ({ id: String(g.id), label: g.title, hint: g.category || '', icon: '&#9670;' })),
-          ],
-          onSelect: async (selId) => {
-            await updateTask(id, { goalId: selId === 'none' ? null : Number(selId) });
-            refreshTasks();
-          },
-        });
-      });
-      wireDrag(row.querySelector('.task-drag'), row, listEl, async (orderedIds) => reorderTasks(date, orderedIds));
-    });
-  }
-
-  // Smart prefill: carried-over unfinished to-dos from yesterday, one-tap add or dismiss.
-  const dismissedCarryover = new Set(JSON.parse(sessionStorage.getItem(`momentum-carryover-dismissed-${date}`) || '[]'));
-  function saveDismissed() {
-    sessionStorage.setItem(`momentum-carryover-dismissed-${date}`, JSON.stringify([...dismissedCarryover]));
-  }
-  async function refreshCarryover(todaysTasks) {
-    const carryEl = view.querySelector('#carryover');
-    const yTasks = await getTasksForDate(yDate);
-    const todaysTexts = new Set(todaysTasks.map((t) => t.text.trim().toLowerCase()));
-    const candidates = yTasks.filter((t) => !t.done && !dismissedCarryover.has(t.id) && !todaysTexts.has(t.text.trim().toLowerCase()));
-    if (!candidates.length) { carryEl.hidden = true; carryEl.innerHTML = ''; return; }
-    carryEl.hidden = false;
-    carryEl.innerHTML = `
-      <div class="carryover__label">Carried over from yesterday</div>
-      ${candidates.map((t) => `
-        <div class="carryover__row" data-yid="${t.id}">
-          <span class="carryover__text">${escapeHtml(t.text)}</span>
-          <button class="carryover__add" aria-label="Add to today">Add</button>
-          <button class="carryover__dismiss" aria-label="Dismiss">&times;</button>
+async function renderWeatherWidget(el, settings) {
+  el.innerHTML = `<div class="home-widget__skeleton"><div class="skel-line skel-line--w60"></div><div class="skel-line skel-line--w40"></div></div>`;
+  try {
+    const weather = await getWeather(settings);
+    if (!weather) { el.hidden = true; el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="weather-widget">
+        <span class="weather-widget__icon">${weather.icon}</span>
+        <div class="weather-widget__body">
+          <div class="weather-widget__temp">${weather.temp}&deg;${weather.unit}</div>
+          <div class="weather-widget__label">${escapeHtml(weather.label)}${weather.city ? ` &middot; ${escapeHtml(weather.city)}` : ''}</div>
         </div>
-      `).join('')}
+      </div>
     `;
-    carryEl.querySelectorAll('.carryover__row').forEach((row) => {
-      const yid = Number(row.dataset.yid);
-      const src = candidates.find((c) => c.id === yid);
-      row.querySelector('.carryover__add').addEventListener('click', async () => {
-        await addTask(date, src.text, src.goalId || null);
-        dismissedCarryover.add(yid);
-        saveDismissed();
-        refreshTasks();
-      });
-      row.querySelector('.carryover__dismiss').addEventListener('click', () => {
-        dismissedCarryover.add(yid);
-        saveDismissed();
-        row.remove();
-        if (!carryEl.querySelector('.carryover__row')) carryEl.hidden = true;
-      });
-    });
+  } catch (err) {
+    console.warn('weather widget failed', err);
+    el.hidden = true; el.innerHTML = '';
   }
-
-  view.querySelector('#add-task-btn').addEventListener('click', async () => {
-    const presets = await getRecentTaskTexts(6);
-    openPrompt({
-      title: 'New to-do', placeholder: 'e.g. Finish project proposal', confirmLabel: 'Add', presets,
-      onSubmit: async (text) => { await addTask(date, text); refreshTasks(); },
-    });
-  });
-
-  await refreshTasks();
-
-  // ---- Log (done / learned) ----
-  async function refreshLog() {
-    const items = await getLogForDate(date);
-    const listEl = view.querySelector('#log-list');
-    listEl.innerHTML = items.map((i) => `
-      <li class="log-row log-row--${i.type}" data-id="${i.id}">
-        <span class="log-row__dot">${i.type === 'done' ? '&#9679;' : '&#9670;'}</span>
-        <span class="log-row__text">${escapeHtml(i.text)}</span>
-        <button class="log-row__delete" aria-label="Delete">&times;</button>
-      </li>
-    `).join('');
-    listEl.querySelectorAll('.log-row__delete').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        await deleteLogItem(Number(btn.closest('.log-row').dataset.id));
-        refreshLog();
-      });
-    });
-  }
-  view.querySelector('#add-done-btn').addEventListener('click', () => {
-    openPrompt({ title: 'I did...', placeholder: 'e.g. Went for a 20-min run', confirmLabel: 'Log it',
-      onSubmit: async (text) => { await addLogItem(date, 'done', text); refreshLog(); } });
-  });
-  view.querySelector('#add-learned-btn').addEventListener('click', () => {
-    openPrompt({ title: 'I learned...', placeholder: 'e.g. Async/await pitfalls in JS', confirmLabel: 'Log it',
-      onSubmit: async (text) => { await addLogItem(date, 'learned', text); refreshLog(); } });
-  });
-  await refreshLog();
-
-  // ---- Health sliders ----
-  // Smart prefill: default each slider to *yesterday's* rating for that dimension when
-  // today has none yet; fall back to the scale midpoint only if yesterday has no data
-  // either. Still fully draggable/editable -- nothing here is written until touched.
-  const healthRow = view.querySelector('#health-row');
-  for (const dim of settings.healthDims.filter((d) => d.enabled)) {
-    const todayVal = day.ratings?.[dim.key];
-    const prefill = typeof todayVal === 'number' ? todayVal : yDay.ratings?.[dim.key];
-    const slider = createHealthSlider({
-      key: dim.key, label: dim.label, value: prefill, scale: settings.ratingScale,
-      onChange: async (v) => {
-        const cur = await getDay(date);
-        await saveDay(date, { ratings: { ...cur.ratings, [dim.key]: v } });
-      },
-    });
-    healthRow.appendChild(slider.el);
-  }
-
-  // Emotion tags for today, next to the health sliders (one shared component).
-  mountEmotionTagRow(view.querySelector('#emo-tag-mount'), { date, tags: day.emotions || [] });
-
-  // ---- Handle FAB pending action ----
-  if (pendingAction === 'task') view.querySelector('#add-task-btn').click();
-  if (pendingAction === 'done') view.querySelector('#add-done-btn').click();
-  if (pendingAction === 'learned') view.querySelector('#add-learned-btn').click();
-  if (pendingAction === 'journal') journalInput.focus();
 }
 
-async function renderRecap(el, yDate) {
-  const [day, tasks, log] = await Promise.all([getDay(yDate), getTasksForDate(yDate), getLogForDate(yDate)]);
-  const done = tasks.filter((t) => t.done);
-  const settings = await getSettings();
-  const ratingsHtml = settings.healthDims.filter((d) => d.enabled).map((d) => {
-    const v = day.ratings?.[d.key];
-    return `<span class="recap__rating"><b>${v ?? '&mdash;'}</b><small>${d.label}</small></span>`;
-  }).join('');
-  el.innerHTML = `
-    <div class="recap__card">
-      <button class="recap__dismiss" aria-label="Dismiss">&times;</button>
-      <div class="recap__eyebrow">Yesterday</div>
-      ${done.length ? `<div class="recap__block"><h3>Completed</h3><ul>${done.map((t) => `<li>${escapeHtml(t.text)}</li>`).join('')}</ul></div>` : ''}
-      ${log.length ? `<div class="recap__block"><h3>Logged</h3><ul>${log.slice(0, 4).map((i) => `<li>${i.type === 'done' ? '&#9679;' : '&#9670;'} ${escapeHtml(i.text)}</li>`).join('')}</ul></div>` : ''}
-      ${!done.length && !log.length ? `<p class="recap__empty">No activity logged yesterday.</p>` : ''}
-      <div class="recap__ratings">${ratingsHtml}</div>
-    </div>
-  `;
-  el.querySelector('.recap__dismiss').addEventListener('click', () => {
-    dismissRecapToday();
-    el.remove();
-  });
-}
-
-function taskRowHTML(t, goals) {
-  const goal = goals.find((g) => g.id === t.goalId);
-  return `
-    <li class="task-row ${t.done ? 'is-done' : ''}" data-id="${t.id}">
-      <button class="task-drag" aria-label="Drag to reorder" tabindex="-1">
-        <svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="6" r="1.4" fill="currentColor"/><circle cx="9" cy="12" r="1.4" fill="currentColor"/><circle cx="9" cy="18" r="1.4" fill="currentColor"/><circle cx="15" cy="6" r="1.4" fill="currentColor"/><circle cx="15" cy="12" r="1.4" fill="currentColor"/><circle cx="15" cy="18" r="1.4" fill="currentColor"/></svg>
-      </button>
-      <button class="task-check" aria-label="Toggle done"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <span class="task-row__text">${escapeHtml(t.text)}</span>
-      <button class="task-link ${goal ? 'has-goal' : ''}" aria-label="Link to a goal" title="Link to a goal">${goal ? escapeHtml(goal.title) : '&#9670;'}</button>
-      <button class="task-delete" aria-label="Delete">&times;</button>
-    </li>
-  `;
-}
-
-// Pointer-event based reorder (HTML5 drag-and-drop never fires from touch on iOS
-// Safari, the real target device). Follows the same pointerdown/pointermove/pointerup
-// + setPointerCapture pattern as components/slider.js. The drag is bound to a small
-// handle (not the whole row) so the rest of the row keeps native scroll/tap behavior;
-// the handle alone gets `touch-action: none` in CSS so a touch-drag isn't hijacked by
-// the page scroll gesture. The dragged row itself moves visually via a CSS transform
-// (reusing the existing .is-dragging class); sibling rows are hit-tested against by
-// bounding rect on every move to decide the live drop position.
-function wireDrag(handle, row, listEl, onReorder) {
-  let pointerId = null;
-  let dragging = false;
-  let startClientY = 0;
-  let staticTop = 0;
-
-  function siblingRows() {
-    return [...listEl.querySelectorAll('.task-row')].filter((r) => r !== row);
+async function renderNewsWidget(el, settings) {
+  el.innerHTML = `<div class="home-widget__skeleton"><div class="skel-line skel-line--w80"></div><div class="skel-line skel-line--w70"></div></div>`;
+  try {
+    const headlines = await getHeadlines(settings);
+    if (!headlines.length) { el.hidden = true; el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="card__title-row"><h2 class="card__title">In the news</h2></div>
+      <ul class="news-widget__list">
+        ${headlines.map((h) => h.url
+          ? `<li><a class="news-widget__item" href="${h.url}" target="_blank" rel="noopener noreferrer">${escapeHtml(h.title)}</a></li>`
+          : `<li><span class="news-widget__item">${escapeHtml(h.title)}</span></li>`
+        ).join('')}
+      </ul>
+    `;
+  } catch (err) {
+    console.warn('news widget failed', err);
+    el.hidden = true; el.innerHTML = '';
   }
+}
 
-  handle.addEventListener('pointerdown', (e) => {
-    pointerId = e.pointerId;
-    startClientY = e.clientY;
-    staticTop = row.getBoundingClientRect().top;
-    handle.setPointerCapture(pointerId);
-  });
-
-  handle.addEventListener('pointermove', (e) => {
-    if (pointerId === null || e.pointerId !== pointerId) return;
-    const dy = e.clientY - startClientY;
-    if (!dragging) {
-      if (Math.abs(dy) < 4) return;
-      dragging = true;
-      row.classList.add('is-dragging');
-      row.style.zIndex = '5';
-    }
-    const desiredTop = staticTop + dy;
-    row.style.transform = `translateY(${desiredTop - staticTop}px)`;
-
-    const rowHeight = row.getBoundingClientRect().height;
-    const desiredMid = desiredTop + rowHeight / 2;
-    for (const sib of siblingRows()) {
-      const r = sib.getBoundingClientRect();
-      if (desiredMid > r.top && desiredMid < r.bottom) {
-        const before = desiredMid < r.top + r.height / 2;
-        const ref = before ? sib : sib.nextSibling;
-        if (ref !== row) {
-          listEl.insertBefore(row, ref);
-          // Re-anchor the transform baseline to the row's new static position so it
-          // doesn't visually jump by the amount the reflow just shifted it.
-          staticTop = row.getBoundingClientRect().top - (desiredTop - staticTop);
-          row.style.transform = `translateY(${desiredTop - staticTop}px)`;
-        }
-        break;
+async function renderWordWidget(el, date) {
+  el.innerHTML = `<div class="home-widget__skeleton"><div class="skel-line skel-line--w50"></div><div class="skel-line skel-line--w90"></div></div>`;
+  try {
+    const [y, m, d] = date.split('-').map(Number);
+    const entry = await wordForDate(new Date(y, m - 1, d));
+    el.innerHTML = `
+      <div class="card__title-row"><h2 class="card__title">Word of the day</h2></div>
+      ${entry ? `
+        <div class="word-widget__entry">
+          <span class="word-widget__word">${escapeHtml(entry.word)}</span>
+          <span class="word-widget__pos">${escapeHtml(entry.partOfSpeech)}</span>
+          <p class="word-widget__def">${escapeHtml(entry.definition)}</p>
+          ${entry.example ? `<p class="word-widget__example">&ldquo;${escapeHtml(entry.example)}&rdquo;</p>` : ''}
+        </div>
+      ` : `<p class="empty-hint">No word bank available.</p>`}
+      <div class="word-lookup">
+        <label class="field-label">Look up any word</label>
+        <div class="word-lookup__row">
+          <input type="text" class="text-field word-lookup__input" id="word-lookup-input" placeholder="e.g. luminous" ${navigator.onLine ? '' : 'disabled'} />
+          <button class="chip-btn word-lookup__btn" id="word-lookup-btn" ${navigator.onLine ? '' : 'disabled'}>Look up</button>
+        </div>
+        ${navigator.onLine ? '' : '<p class="settings-hint">Look-up needs a connection -- word of the day still works offline.</p>'}
+        <div class="word-lookup__result" id="word-lookup-result"></div>
+      </div>
+    `;
+    const input = el.querySelector('#word-lookup-input');
+    const btn = el.querySelector('#word-lookup-btn');
+    const resultEl = el.querySelector('#word-lookup-result');
+    async function doLookup() {
+      const word = input.value.trim();
+      if (!word) return;
+      resultEl.innerHTML = `<div class="home-widget__skeleton"><div class="skel-line skel-line--w70"></div></div>`;
+      const res = await lookupWord(word);
+      if (!res.found) {
+        resultEl.innerHTML = `<p class="empty-hint">${res.error ? 'Look-up failed -- try again.' : `No definition found for "${escapeHtml(word)}".`}</p>`;
+        return;
       }
+      resultEl.innerHTML = `
+        <div class="word-widget__entry">
+          <span class="word-widget__word">${escapeHtml(res.word)}</span>
+          <span class="word-widget__pos">${escapeHtml(res.partOfSpeech)}</span>
+          <p class="word-widget__def">${escapeHtml(res.definition)}</p>
+          ${res.example ? `<p class="word-widget__example">&ldquo;${escapeHtml(res.example)}&rdquo;</p>` : ''}
+        </div>
+      `;
     }
-  });
-
-  function end(e) {
-    if (pointerId === null || (e && e.pointerId !== pointerId)) return;
-    if (dragging) {
-      row.classList.remove('is-dragging');
-      row.style.transform = '';
-      row.style.zIndex = '';
-      const ids = [...listEl.querySelectorAll('.task-row')].map((r) => Number(r.dataset.id));
-      onReorder(ids);
-    }
-    dragging = false;
-    pointerId = null;
+    if (btn) btn.addEventListener('click', doLookup);
+    if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doLookup(); } });
+  } catch (err) {
+    console.warn('word-of-day widget failed', err);
+    el.hidden = true; el.innerHTML = '';
   }
-  handle.addEventListener('pointerup', end);
-  handle.addEventListener('pointercancel', end);
 }
 
-function isBeforeCutoff(cutoff) {
-  const [h, m] = (cutoff || '12:00').split(':').map(Number);
-  const now = new Date();
-  return now.getHours() < h || (now.getHours() === h && now.getMinutes() < m);
+function renderAstroWidget(el, settings) {
+  try {
+    if (!settings.birthDate) {
+      el.innerHTML = `
+        <div class="card__title-row"><h2 class="card__title">Astrology</h2></div>
+        <p class="empty-hint">Set your birth date in Settings to see your sign.</p>
+      `;
+      return;
+    }
+    const z = sunSignFor(settings.birthDate);
+    const moon = moonPhase(new Date());
+    el.innerHTML = `
+      <div class="card__title-row"><h2 class="card__title">Astrology</h2></div>
+      ${z ? `
+        <div class="astro-row">
+          <div class="astro-row__block">
+            <div class="astro-row__label">Sun sign</div>
+            <div class="astro-row__value">${z.sign}</div>
+            <div class="astro-row__trait">${escapeHtml(z.trait)}</div>
+          </div>
+        </div>
+      ` : ''}
+      <div class="astro-row">
+        <div class="astro-row__block">
+          <div class="astro-row__label">Moon today</div>
+          <div class="astro-row__value">${moon.emoji} ${moon.name}</div>
+        </div>
+      </div>
+      <div class="astro-horoscope astro-horoscope--disabled">
+        <span>Daily horoscope</span>
+        <small>Connect a source in a future update</small>
+      </div>
+    `;
+  } catch (err) {
+    console.warn('astrology widget failed', err);
+    el.hidden = true; el.innerHTML = '';
+  }
 }
 
-function recapKey() { return `momentum-recap-dismissed-${todayStr()}`; }
-function isRecapDismissedToday() { return sessionStorage.getItem(recapKey()) === '1'; }
-function dismissRecapToday() { sessionStorage.setItem(recapKey(), '1'); }
+async function renderGlanceWidget(el, settings, date) {
+  try {
+    const [day, tasks, streak] = await Promise.all([
+      getDay(date), getTasksForDate(date), getActivityStreak(),
+    ]);
+    const mood = moodFor(day, settings.ratingScale);
+    const nextTask = tasks.find((t) => !t.done);
+
+    el.innerHTML = `
+      <div class="glance-row">
+        <button type="button" class="glance-tile" id="glance-mood">
+          <span class="glance-tile__icon">${mood ? (mood.kind === 'emoji' ? mood.value : '\u{1F3F7}️') : '&mdash;'}</span>
+          <span class="glance-tile__label">${mood ? (mood.kind === 'word' ? escapeHtml(mood.value) : 'Mood') : 'No mood yet'}</span>
+        </button>
+        <button type="button" class="glance-tile" id="glance-task">
+          <span class="glance-tile__icon">${nextTask ? '○' : '✓'}</span>
+          <span class="glance-tile__label">${nextTask ? escapeHtml(nextTask.text.slice(0, 40)) : 'All done'}</span>
+        </button>
+        <button type="button" class="glance-tile" id="glance-streak">
+          <span class="glance-tile__icon">${streak > 0 ? '\u{1F525}' : '—'}</span>
+          <span class="glance-tile__label">${streak} day${streak === 1 ? '' : 's'} streak</span>
+        </button>
+      </div>
+    `;
+    el.querySelector('#glance-mood').addEventListener('click', () => { location.hash = '#/journal'; });
+    el.querySelector('#glance-task').addEventListener('click', () => { location.hash = '#/goals'; });
+    el.querySelector('#glance-streak').addEventListener('click', () => { location.hash = '#/review'; });
+  } catch (err) {
+    console.warn('at-a-glance widget failed', err);
+    el.hidden = true; el.innerHTML = '';
+  }
+}

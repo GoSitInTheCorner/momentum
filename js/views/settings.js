@@ -3,6 +3,7 @@
 // 'settings-changed' event to re-run applyTheme() app-wide.
 import { getSettings, saveSettings, exportBackup, importBackup, clearAllData, estimateStorageUsage } from '../store.js';
 import { hashPasscode } from '../lock.js';
+import { escapeHtml } from '../util.js';
 
 const THEME_OPTIONS = [
   { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' },
@@ -26,6 +27,7 @@ export async function renderSettings(root) {
     <div class="scroll-area">
       <section class="card"><h2 class="card__title">Appearance</h2><div id="s-appearance"></div></section>
       <section class="card"><h2 class="card__title">Behavior</h2><div id="s-behavior"></div></section>
+      <section class="card"><h2 class="card__title">Home &amp; widgets</h2><div id="s-home"></div></section>
       <section class="card"><h2 class="card__title">Health tracking</h2><div id="s-health"></div></section>
       <section class="card"><h2 class="card__title">Journal</h2><div id="s-journal"></div></section>
       <section class="card"><h2 class="card__title">Privacy &amp; lock</h2><div id="s-lock"></div></section>
@@ -42,6 +44,7 @@ export async function renderSettings(root) {
 
   renderAppearance(view.querySelector('#s-appearance'), settings, update);
   renderBehavior(view.querySelector('#s-behavior'), settings, update);
+  renderHome(view.querySelector('#s-home'), settings, update);
   renderHealth(view.querySelector('#s-health'), settings, update);
   renderJournalSection(view.querySelector('#s-journal'), settings, update);
   renderLock(view.querySelector('#s-lock'), settings, update);
@@ -96,9 +99,6 @@ function renderAppearance(el, settings, update) {
 function renderBehavior(el, settings, update) {
   el.innerHTML = `
     ${row('Default landing tab', segButtons('landingTab', ['today', 'journal', 'review', 'goals', 'settings'], settings.landingTab))}
-    ${row('Yesterday recap', `<label class="switch"><input type="checkbox" id="s-recap-enabled" ${settings.recapEnabled ? 'checked' : ''}/><span class="switch__track"></span></label>`)}
-    ${row('Always show recap', `<label class="switch"><input type="checkbox" id="s-recap-always" ${settings.recapAlways ? 'checked' : ''}/><span class="switch__track"></span></label>`)}
-    ${row('Recap cutoff time', `<input type="time" class="text-field" id="s-recap-cutoff" value="${settings.recapCutoff}" />`)}
     ${row('Week starts on', segButtons('weekStart', ['sun', 'mon'], settings.weekStart))}
     ${row('Date format', segButtons('dateFormat', ['MMM D', 'D/M', 'M/D', 'YYYY-MM-DD'], settings.dateFormat))}
     ${row('Time format', segButtons('timeFormat', ['12', '24'], settings.timeFormat))}
@@ -111,9 +111,37 @@ function renderBehavior(el, settings, update) {
       await update({ [seg.dataset.field]: btn.dataset.val });
     });
   });
-  el.querySelector('#s-recap-enabled').addEventListener('change', (e) => update({ recapEnabled: e.target.checked }));
-  el.querySelector('#s-recap-always').addEventListener('change', (e) => update({ recapAlways: e.target.checked }));
-  el.querySelector('#s-recap-cutoff').addEventListener('change', (e) => update({ recapCutoff: e.target.value }));
+}
+
+const HOME_WIDGET_ROWS = [
+  ['weather', 'Weather'], ['news', 'News peek'], ['wordOfDay', 'Word of the day'],
+  ['astrology', 'Astrology'], ['calendar', 'Calendar'], ['atAGlance', 'At-a-glance strip'],
+];
+
+function renderHome(el, settings, update) {
+  el.innerHTML = `
+    ${row('Birth date', `<input type="date" class="text-field" id="s-birth-date" value="${settings.birthDate || ''}" />`)}
+    ${row('Weather city (fallback)', `<input type="text" class="text-field" id="s-weather-city" placeholder="e.g. Kansas City" value="${escapeHtml(settings.weatherCity || '')}" />`)}
+    ${row('Weather units', segButtons('weatherUnits', ['C', 'F'], settings.weatherUnits))}
+    ${row('News topic (optional)', `<input type="text" class="text-field" id="s-news-topic" placeholder="e.g. technology" value="${escapeHtml(settings.newsTopic || '')}" />`)}
+    <label class="field-label">Home widgets</label>
+    ${HOME_WIDGET_ROWS.map(([key, label]) => row(label, `<label class="switch"><input type="checkbox" data-widget="${key}" ${settings.homeWidgets?.[key] !== false ? 'checked' : ''}/><span class="switch__track"></span></label>`)).join('')}
+  `;
+  el.querySelector('.segmented[data-field="weatherUnits"]').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-val]');
+    if (!btn) return;
+    el.querySelectorAll('.segmented[data-field="weatherUnits"] .segmented__btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+    await update({ weatherUnits: btn.dataset.val });
+  });
+  el.querySelector('#s-birth-date').addEventListener('change', (e) => update({ birthDate: e.target.value || null }));
+  el.querySelector('#s-weather-city').addEventListener('change', (e) => update({ weatherCity: e.target.value.trim() }));
+  el.querySelector('#s-news-topic').addEventListener('change', (e) => update({ newsTopic: e.target.value.trim() }));
+  el.querySelectorAll('[data-widget]').forEach((cb) => {
+    cb.addEventListener('change', async (e) => {
+      const key = e.target.dataset.widget;
+      await update({ homeWidgets: { ...settings.homeWidgets, [key]: e.target.checked } });
+    });
+  });
 }
 
 function renderHealth(el, settings, update) {
