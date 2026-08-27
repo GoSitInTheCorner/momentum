@@ -1,61 +1,128 @@
-PASS -- no horizontal overflow (today-initial) :: scrollWidth=402
-PASS -- two to-dos added :: count=2
-PASS -- one to-do checked off (animated) :: is-done count=1
-PASS -- journal text entered
-PASS -- all 3 health sliders set :: ["8","8","8"]
-PASS -- done + learned log items added :: count=2
-PASS -- emotion tag added via slider trigger :: ["Proud"]
-PASS -- emotion word inserted into journal at cursor
-PASS -- no horizontal overflow (today-populated) :: scrollWidth=402
+PASS -- Settings has all 7 home-widget toggles :: count=7
+PASS -- Settings has all 11 health-dim toggles :: count=11
+PASS -- no horizontal overflow (home-initial) :: scrollWidth=402
+PASS -- Home has no full editing surfaces (no textarea/sliders) -- only the compact to-dos card is editable :: count=0
+PASS -- Home shows the compact "Today's tasks" card :: count=1
+PASS -- quick-add on Home creates a to-do :: count=1
+PASS -- checking off a to-do on Home works :: count=1
+PASS -- astrology shows correct sun sign for sample birth date (Gemini) :: Astrology
+SUN SIGN
+Gemini
+MOON SIGN
+Pisces
+curious and quick-witted, energized by conversation
+MOON TODAY
+🌕 Full Moon
+
+Moon sign is approximate.
+
+Daily horosco
+PASS -- astrology shows a moon phase :: Astrology
+SUN SIGN
+Gemini
+MOON SIGN
+Pisces
+curious and quick-witted, energized by conversation
+MOON TODAY
+🌕 Full Moon
+
+Moon sign is approximate.
+
+Daily horosco
+PASS -- astrology shows a Moon sign (v2.2) :: Pisces
+PASS -- astrology shows the disabled horoscope slot
+PASS -- weather widget resolves to content or hides gracefully (no stuck skeleton)
+PASS -- news widget resolves to content or hides gracefully
+PASS -- home word widget shows exactly 6 words (3 opposing pairs) :: count=6
+PASS -- word pairs show no inline definitions :: count=0
+PASS -- tapping a word pair fills + runs the dictionary look-up :: Look-up failed -- try again.
+PASS -- manual word look-up produces a result or a clean not-found/failed state (no crash) :: Look-up failed -- try again.
+PASS -- tapping a calendar day opens that day's detail sheet
+PASS -- day-detail sheet shows the full written date :: Thursday, August 27, 2026
+PASS -- at-a-glance strip shows 3 tiles :: count=3
+PASS -- tapping the streak tile routes to Review
+PASS -- CTA opens the full-screen writing view :: #/journal?write=1
+PASS -- writing view shows the full written date header :: Thursday, August 27, 2026
+PASS -- writing view entry field starts EMPTY (no prompt text prefilled) :: ""
+PASS -- empty entry field offers the daily prompt as a PLACEHOLDER, not real content :: What is one thing you want to remember about today?
+PASS -- tab bar is hidden in the writing view
+PASS -- FAB is hidden in the writing view
+PASS -- writing view shows nothing but the date + textarea (no sliders/tags/log) :: count=0
+PASS -- writing view leaves the entry field focused/ready to type
+PASS -- "Saving…" indicator appears while the writing-view debounce is pending :: Saving…
+PASS -- "Saved ✓" indicator appears after writing-view autosave flushes :: Saved ✓
+PASS -- emotion word inserted into the writing view at cursor
+PASS -- Back returns to the Journal hub :: #/journal?segment=entries
+PASS -- tab bar reappears after leaving the writing view
+PASS -- Journal hub "Today" card previews the saved entry :: Reflecting on a solid, productive day. Feeling steady and focused.Grateful
+PASS -- re-entering the writing view shows the persisted text (not empty, not a prompt) :: Reflecting on a solid, productive day. Feeling steady and fo
+PASS -- no horizontal overflow (home-populated) :: scrollWidth=402
+PASS -- three to-dos exist on the Tasks tab (1 from Home + 2 added here) :: count=3
+PASS -- a to-do checked off on the Tasks tab (animated) :: is-done count=2
+PASS -- "Saved" indicator flashes after a to-do change
+PASS -- no horizontal overflow (tasks) :: scrollWidth=402
+PASS -- Goals no longer shows the to-do list :: count=0
 PASS -- goal with milestone created :: count=1
 PASS -- no horizontal overflow (goals) :: scrollWidth=402
+PASS -- no horizontal overflow (journal-hub) :: scrollWidth=402
+PASS -- Journal "Daily check-in" is collapsed by default
+PASS -- Daily check-in expands on tap
+PASS -- all 3 core health sliders set :: ["8","8","8"]
+PASS -- "Saved" indicator also flashes on a slider change :: Saved ✓
+PASS -- only the core 3 sliders exist before expanding life areas :: count=3
+PASS -- expanding "Rate more life areas" mounts all 11 sliders :: count=11
+PASS -- "Saved" indicator also flashes on an expanded life-area slider change :: Saved ✓
+PASS -- Finances and Spirit sliders show a set value :: 9 / 9
+PASS -- no horizontal overflow (journal-lifeareas-expanded) :: scrollWidth=402
+PASS -- done + learned log items added :: count=2
+PASS -- emotion tag added via slider trigger :: ["Proud"]
+PASS -- no horizontal overflow (journal-populated) :: scrollWidth=402
 PASS -- no horizontal overflow (review) :: scrollWidth=402
 PASS -- Review cycles all 4 periods + custom without console errors
-FAIL -- belief stance update appended to history :: history items=2
+PASS -- Wheel of Life radar canvas exists on Review :: count=1
+PASS -- Wheel of Life renders (not empty-state) when the period has ratings
+PASS -- belief stance update appended to history :: history items=2
+PASS -- newest history entry records the NEW stance value :: Supportive after reviewing the Finland/Kenya pilot results.
 PASS -- no horizontal overflow (journal) :: scrollWidth=402
 PASS -- no horizontal overflow (settings) :: scrollWidth=402
 PASS -- no horizontal overflow (settings-dark) :: scrollWidth=402
 PASS -- accent color setting applied live
-PASS -- no horizontal overflow (today-dark) :: scrollWidth=402
+PASS -- no horizontal overflow (home-dark) :: scrollWidth=402
 PASS -- no horizontal overflow (journal-dark) :: scrollWidth=402
+PASS -- no horizontal overflow (tasks-dark) :: scrollWidth=402
 PASS -- no horizontal overflow (goals-dark) :: scrollWidth=402
 PASS -- no horizontal overflow (review-dark) :: scrollWidth=402
+PASS -- turning off a Home widget toggle hides that widget
+PASS -- turning off Finances in Settings removes it from the check-in expand-group :: count=0
+PASS -- turning Finances back on in Settings restores it to the check-in expand-group :: count=1
 PASS -- AMOLED theme applies true-black background :: #000000
-TEST SCRIPT CRASHED: page.click: Timeout 8000ms exceeded.
-Call log:
-[2m  - waiting for locator('#s-lock-enabled')[22m
-[2m    - locator resolved to <input type="checkbox" id="s-lock-enabled"/>[22m
-[2m  - attempting click action[22m
-[2m    2 × waiting for element to be visible, enabled and stable[22m
-[2m      - element is not visible[22m
-[2m    - retrying click action[22m
-[2m    - waiting 20ms[22m
-[2m    2 × waiting for element to be visible, enabled and stable[22m
-[2m      - element is not visible[22m
-[2m    - retrying click action[22m
-[2m      - waiting 100ms[22m
-[2m    15 × waiting for element to be visible, enabled and stable[22m
-[2m       - element is not visible[22m
-[2m     - retrying click action[22m
-[2m       - waiting 500ms[22m
+PASS -- passcode lock engages on reload when enabled :: overlay count=1
+PASS -- correct passcode unlocks the app
+PASS -- export backup produced a downloadable file :: C:\Users\User\AppData\Local\Temp\playwright-artifacts-glBJaZ\b3c2dfdc-3bd5-4497-9fc9-dfa85523663f
+PASS -- to-dos persisted after reload (Tasks tab) :: count=3
+PASS -- goal persisted after reload :: count=1
+PASS -- journal text persisted after reload (Journal hub preview) :: Reflecting on a solid, productive day. Feeling steady and focused.Grateful
+PASS -- emotion tags persisted after reload :: count=1
+PASS -- Finances rating persisted after reload :: before=9 after=9
+PASS -- Spirit rating persisted after reload :: before=9 after=9
+PASS -- belief topic + full stance history persisted after reload :: history=2
+PASS -- theme setting persisted after reload :: dark
+PASS -- birth date / astrology setting persisted after reload :: Astrology
+SUN SIGN
+Gemini
+MOON SIGN
+Pisces
+curious and quick-witted, energized b
+PASS -- Review handles an empty custom range without crashing (incl. Wheel of Life empty-state) :: consoleErrors=0 wheelEmptyHidden=false
+PASS -- yesterday recap card shows on Home :: count=1
+PASS -- recap surfaces yesterday activity :: YESTERDAY · WEDNESDAY, AUGUST 26, 2026 × ✓ 1 task done 1 accomplished 1 learned Shipped th
+PASS -- recap dismiss hides the card :: count=0
+PASS -- app renders while offline (service worker cache hit) :: tabbar count=1
+PASS -- "Words to sit with" still renders fully offline :: count=6
+PASS -- weather widget degrades gracefully offline (hidden, no crash)
+PASS -- offline navigation works (Journal tab reachable)
+PASS -- zero console errors across full run
+PASS -- every external request targets the allowlisted keyless APIs
 
-    at main (C:\Users\User\AI\momentum\scripts\test.js:264:14) {
-  log: [
-    "  - waiting for locator('#s-lock-enabled')",
-    '    - locator resolved to <input type="checkbox" id="s-lock-enabled"/>',
-    '  - attempting click action',
-    '    2 × waiting for element to be visible, enabled and stable',
-    '      - element is not visible',
-    '    - retrying click action',
-    '    - waiting 20ms',
-    '    2 × waiting for element to be visible, enabled and stable',
-    '      - element is not visible',
-    '    - retrying click action',
-    '      - waiting 100ms',
-    '    15 × waiting for element to be visible, enabled and stable',
-    '       - element is not visible',
-    '     - retrying click action',
-    '       - waiting 500ms'
-  ],
-  name: 'TimeoutError'
-}
+=== SUMMARY ===
+98/98 checks passed

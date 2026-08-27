@@ -5,7 +5,7 @@
 
 const EMOJI_SCALE = ['😞', '😕', '😐', '🙂', '😄'];
 
-export function createHealthSlider({ key, label, value, scale = '10', onChange }) {
+export function createHealthSlider({ key, label, value, scale = '10', desc, onChange }) {
   const max = scale === '5' ? 5 : scale === 'emoji' ? 5 : 10;
   const min = scale === 'emoji' ? 1 : 1;
   // Clamp on entry: a stored value from a previously wider scale (e.g. 10-point) can
@@ -23,6 +23,7 @@ export function createHealthSlider({ key, label, value, scale = '10', onChange }
       </div>
     </div>
     <div class="hslider__label">${label}</div>
+    ${desc ? `<div class="hslider__desc">${desc}</div>` : ''}
   `;
 
   const track = wrap.querySelector('.hslider__track');

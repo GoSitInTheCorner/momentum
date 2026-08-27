@@ -81,6 +81,53 @@ export function renderBarChart(canvas, { labels, data, color }) {
   return chart;
 }
 
+// Wheel of Life radar (v2.1) -- one point per enabled life area, averaged over the
+// active Review period. `max` should match the active rating-scale setting (5/10, or
+// 5 for emoji since that's the slider's internal numeric range) so the ring matches
+// what the sliders themselves can produce.
+export function renderRadarChart(canvas, { labels, data, max = 10 }) {
+  destroyChart(canvas);
+  const ink = cssVar('--ink-2', '#8a8371');
+  const grid = cssVar('--hairline', 'rgba(0,0,0,0.08)');
+  const accent = cssVar('--accent', '#c1622d');
+  const chart = new Chart(canvas.getContext('2d'), {
+    type: 'radar',
+    data: {
+      labels,
+      datasets: [{
+        data,
+        borderColor: accent,
+        backgroundColor: accent + '33',
+        pointBackgroundColor: accent,
+        borderWidth: 2.5,
+        pointRadius: 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 500 },
+      scales: {
+        r: {
+          min: 0,
+          max,
+          ticks: { display: false, stepSize: max / 5 },
+          grid: { color: grid },
+          angleLines: { color: grid },
+          pointLabels: { color: ink, font: { size: 10 } },
+        },
+      },
+      plugins: {
+        legend: { display: false },
+        tooltip: { backgroundColor: cssVar('--card', '#fff'), titleColor: cssVar('--ink', '#222'), bodyColor: cssVar('--ink', '#222'), borderColor: grid, borderWidth: 1, padding: 10, cornerRadius: 8 },
+      },
+    },
+  });
+  registry.set(canvas, chart);
+  liveCharts.add(chart);
+  return chart;
+}
+
 export function destroyChart(canvas) {
   const existing = registry.get(canvas);
   if (existing) { existing.destroy(); registry.delete(canvas); liveCharts.delete(existing); }

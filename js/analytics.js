@@ -123,7 +123,7 @@ export async function computeStreaks() {
   return { current, longest };
 }
 
-function avg(arr) {
+export function avg(arr) {
   const vals = arr.filter((v) => typeof v === 'number');
   if (!vals.length) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;

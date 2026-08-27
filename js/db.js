@@ -15,6 +15,12 @@ db.version(1).stores({
   settings: 'id',
 });
 
+// Local-only debug handle so automated tests can seed data. Never active on the
+// deployed site (GitHub Pages host is not 'localhost').
+if (typeof location !== 'undefined' && location.hostname === 'localhost') {
+  try { window.__momentumDb = db; } catch (_) { /* ignore */ }
+}
+
 export function todayStr(d = new Date()) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');

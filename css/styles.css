@@ -124,12 +124,27 @@ body::before {
 }
 .view-slot.is-active { opacity: 1; transform: translateY(0); position: relative; }
 .view-slot.is-leaving { opacity: 0; transform: translateY(-8px); position: absolute; }
+/* Immersive journal-writing screen: tab bar is hidden (app.js), so no need to reserve
+   space for it under the content. */
+.view-slot--full { padding-bottom: calc(20px + var(--safe-bottom)); }
 
 .view { display: flex; flex-direction: column; min-height: 100%; }
 
 /* ---------- Topbar ---------- */
 .topbar {
-  padding: calc(20px + var(--safe-top)) 20px 8px;
+  position: relative;
+  padding: calc(20px + var(--safe-top)) 56px 8px 20px;
+}
+/* Gear button, injected by app.js into every view's topbar except Settings itself and
+   the immersive journal-writing screen (v2.2 -- Settings moved off the tab bar).
+   Doubled-up selector (.icon-btn.topbar__gear) so this wins specificity over the later
+   ".icon-btn { position: relative }" tap-target-expansion rule -- otherwise that rule
+   (same 1-class specificity, defined after this one) clobbers position:absolute and the
+   button falls into normal flow instead of docking to the top-right corner. */
+.icon-btn.topbar__gear {
+  position: absolute;
+  top: calc(16px + var(--safe-top));
+  right: calc(16px + var(--safe-right));
 }
 .topbar__eyebrow {
   font-size: 12px;
@@ -233,8 +248,6 @@ body::before {
   color: var(--ink);
 }
 .sheet__presets { margin-bottom: 6px; }
-
-.journal-prompts { margin-bottom: 10px; }
 
 /* ---------- Segmented control ---------- */
 .segmented {
@@ -404,6 +417,26 @@ body::before {
   transition: bottom 0.15s ease;
 }
 .hslider__label { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.hslider__desc { font-size: 10px; color: var(--ink-2); opacity: 0.75; text-align: center; line-height: 1.3; max-width: 84px; }
+
+/* Expandable "Rate more life areas" group -- the other 7 Burchard areas. A wrapping
+   grid (not the core-3 flex row) so 7 items stay readable at 402px instead of
+   squashing into unreadable slivers or forcing horizontal scroll. */
+.life-areas-toggle {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; margin-top: 14px; padding: 10px 0;
+  background: var(--bg-2); border: 1px solid var(--hairline); border-radius: 999px;
+  font-size: 13px; font-weight: 600; color: var(--ink-2);
+}
+.life-areas-toggle__chevron { transition: transform 0.2s ease; display: inline-block; }
+.life-areas-toggle.is-open .life-areas-toggle__chevron { transform: rotate(180deg); }
+.health-row--expand {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px 8px;
+  padding: 16px 4px 4px;
+}
+.health-row--expand .hslider__track { max-width: 48px; height: 110px; }
 
 .emo-tag-mount { margin-top: 14px; }
 .emo-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
@@ -434,7 +467,7 @@ body::before {
 .day-detail__journal-rendered { font-family: var(--journal-font); line-height: 1.7; font-size: 15px; overflow-wrap: anywhere; }
 .day-detail__journal-rendered ul { padding-left: 20px; margin: 6px 0; }
 .day-detail__journal-rendered a { color: var(--accent); text-decoration: underline; }
-.day-detail__ratings { display: flex; gap: 12px; }
+.day-detail__ratings { display: flex; flex-wrap: wrap; gap: 10px; }
 .day-detail__rating { display: flex; flex-direction: column; align-items: center; font-size: 11px; color: var(--ink-2); background: var(--bg-2); border-radius: 10px; padding: 8px 12px; }
 .day-detail__rating b { font-family: var(--font-display); font-size: 18px; color: var(--ink); }
 .day-detail__list { display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
@@ -521,6 +554,7 @@ body::before {
   border-top: 1px solid var(--hairline);
   padding: 6px calc(4px + var(--safe-left)) calc(6px + var(--safe-bottom)) calc(4px + var(--safe-right));
   z-index: 50;
+  transition: transform 0.22s ease;
 }
 .tabbar__item {
   flex: 1 1 0;
@@ -534,6 +568,8 @@ body::before {
 .tabbar__icon svg { width: 100%; height: 100%; }
 .tabbar__label { font-size: 10px; font-weight: 600; }
 .tabbar__item.is-active { color: var(--accent); }
+/* Hidden while the immersive journal-writing view is open (v2.2). */
+.tabbar.is-hidden { transform: translateY(100%); pointer-events: none; }
 
 /* ---------- FAB ---------- */
 .fab {
@@ -638,7 +674,7 @@ body::before {
 }
 
 /* ---------- Safe-area polish ---------- */
-.topbar { padding-left: calc(20px + var(--safe-left)); padding-right: calc(20px + var(--safe-right)); }
+.topbar { padding-left: calc(20px + var(--safe-left)); padding-right: calc(56px + var(--safe-right)); }
 
 /* ==========================================================================
    Home widgets (v2) -- weather / news / word-of-day / astrology / calendar /
@@ -736,3 +772,94 @@ a.news-widget__item:active { opacity: 0.7; }
 }
 .glance-tile__icon { font-size: 20px; line-height: 1; }
 .glance-tile__label { font-size: 11px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+
+/* Astrology -- Sun sign + Moon sign side by side (v2.2). */
+.astro-row--split { display: flex; gap: 12px; }
+.astro-row--split .astro-row__block { flex: 1 1 0; }
+
+/* Today's tasks -- the one Home card that's editable in place (v2.2). Distinct
+   `home-tasklist` classes (not `.task-list`/`.task-row`) so this never collides with
+   the fuller Tasks-tab list (drag reorder, goal-link) or its selectors. */
+.home-tasklist { display: flex; flex-direction: column; }
+.home-tasklist__row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--hairline);
+  transition: opacity 0.35s ease;
+}
+.home-tasklist__row:last-child { border-bottom: none; }
+.home-tasklist__text { flex: 1 1 auto; font-size: 15px; min-width: 0; overflow-wrap: anywhere; }
+.home-tasklist__row.is-done .home-tasklist__text { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--accent); }
+.home-tasklist-add { display: flex; gap: 8px; margin-top: 10px; }
+.home-tasklist-add .text-field { flex: 1 1 auto; }
+
+/* Words to sit with -- 3 antonym pairs, no definitions, each word tappable -> look-up
+   below (v2.2, replaces the single word-of-the-day). */
+.wordpairs { display: flex; flex-direction: column; gap: 10px; }
+.wordpairs__row { display: flex; align-items: center; gap: 10px; }
+.wordpairs__word {
+  flex: 1 1 0; text-align: center; padding: 11px 8px;
+  border-radius: calc(var(--radius) * 0.6); background: var(--bg-2);
+  font-family: var(--font-display); font-weight: 700; font-size: 15px; color: var(--ink);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.wordpairs__word:active { background: var(--accent-soft); color: var(--accent); }
+.wordpairs__glyph { color: var(--ink-2); font-size: 14px; flex: 0 0 auto; }
+
+/* ==========================================================================
+   Journal hub (v2.2 declutter) + full-screen writing view
+   ========================================================================== */
+
+/* "Today" card at the top of the hub -- preview + CTA into the writing view. */
+.journal-today-card { text-align: center; }
+.journal-today-card__date { font-family: var(--font-display); font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+.journal-today-card__preview { font-size: 14px; color: var(--ink-2); line-height: 1.5; margin-bottom: 4px; }
+
+/* Collapsible "Daily check-in" -- collapsed by default so the hub reads as focused
+   (entries + past entries), not a wall of sliders/tags/log controls. */
+.checkin-toggle {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; font-family: var(--font-display); font-size: 16px; font-weight: 600;
+}
+.checkin-toggle__chevron { transition: transform 0.2s ease; display: inline-block; color: var(--ink-2); }
+.checkin-toggle.is-open .checkin-toggle__chevron { transform: rotate(180deg); }
+.checkin-body { margin-top: 14px; }
+.checkin-body .field-label:first-of-type { margin-top: 0; }
+
+/* Full-screen writing view -- date header + textarea + Back/Done, nothing else. The
+   textarea is the visual centerpiece: generous height, a soft card-toned field with a
+   visible border, comfortable padding/line-height, and an accent-colored caret. */
+.view--journal-write { display: flex; flex-direction: column; height: 100%; min-height: 100dvh; }
+.journal-write__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(14px + var(--safe-top)) calc(16px + var(--safe-right)) 6px calc(16px + var(--safe-left));
+  flex: 0 0 auto;
+}
+.journal-write__header-actions { display: flex; align-items: center; gap: 4px; }
+.journal-write__done { font-weight: 700; color: var(--accent); font-size: 15px; padding: 8px 8px; }
+.journal-write__date {
+  font-family: var(--font-display); font-size: 20px; font-weight: 700;
+  padding: 4px calc(20px + var(--safe-right)) 10px calc(20px + var(--safe-left));
+  flex: 0 0 auto;
+}
+.journal-write__body {
+  flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  padding: 0 calc(20px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(20px + var(--safe-left));
+}
+.journal-write__prompts { margin-bottom: 10px; flex: 0 0 auto; }
+.journal-write__textarea {
+  flex: 1 1 auto;
+  min-height: 260px;
+  width: 100%;
+  padding: 18px;
+  border-radius: calc(var(--radius) * 0.8);
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  box-shadow: 0 6px 18px -12px var(--shadow);
+  line-height: 1.75;
+  resize: none;
+  caret-color: var(--accent);
+  transition: border-color 0.15s ease;
+}
+.journal-write__textarea:focus { outline: none; border-color: var(--accent); }
+.journal-write__hint { text-align: center; padding-top: 10px; flex: 0 0 auto; }

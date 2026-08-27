@@ -98,7 +98,7 @@ function renderAppearance(el, settings, update) {
 
 function renderBehavior(el, settings, update) {
   el.innerHTML = `
-    ${row('Default landing tab', segButtons('landingTab', ['today', 'journal', 'review', 'goals', 'settings'], settings.landingTab))}
+    ${row('Default landing tab', segButtons('landingTab', ['today', 'journal', 'tasks', 'goals', 'review'], settings.landingTab))}
     ${row('Week starts on', segButtons('weekStart', ['sun', 'mon'], settings.weekStart))}
     ${row('Date format', segButtons('dateFormat', ['MMM D', 'D/M', 'M/D', 'YYYY-MM-DD'], settings.dateFormat))}
     ${row('Time format', segButtons('timeFormat', ['12', '24'], settings.timeFormat))}
@@ -114,13 +114,16 @@ function renderBehavior(el, settings, update) {
 }
 
 const HOME_WIDGET_ROWS = [
-  ['weather', 'Weather'], ['news', 'News peek'], ['wordOfDay', 'Word of the day'],
+  ['weather', 'Weather'], ['news', 'News peek'], ['wordOfDay', 'Words to sit with'],
   ['astrology', 'Astrology'], ['calendar', 'Calendar'], ['atAGlance', 'At-a-glance strip'],
+  ['todayTasks', "Today's tasks"],
 ];
 
 function renderHome(el, settings, update) {
   el.innerHTML = `
     ${row('Birth date', `<input type="date" class="text-field" id="s-birth-date" value="${settings.birthDate || ''}" />`)}
+    ${row('Birth time (optional)', `<input type="time" class="text-field" id="s-birth-time" value="${settings.birthTime || ''}" />`)}
+    <p class="settings-hint">Birth time refines your Moon sign -- without it, the Moon sign shown is approximate.</p>
     ${row('Weather city (fallback)', `<input type="text" class="text-field" id="s-weather-city" placeholder="e.g. Kansas City" value="${escapeHtml(settings.weatherCity || '')}" />`)}
     ${row('Weather units', segButtons('weatherUnits', ['C', 'F'], settings.weatherUnits))}
     ${row('News topic (optional)', `<input type="text" class="text-field" id="s-news-topic" placeholder="e.g. technology" value="${escapeHtml(settings.newsTopic || '')}" />`)}
@@ -134,6 +137,7 @@ function renderHome(el, settings, update) {
     await update({ weatherUnits: btn.dataset.val });
   });
   el.querySelector('#s-birth-date').addEventListener('change', (e) => update({ birthDate: e.target.value || null }));
+  el.querySelector('#s-birth-time').addEventListener('change', (e) => update({ birthTime: e.target.value || null }));
   el.querySelector('#s-weather-city').addEventListener('change', (e) => update({ weatherCity: e.target.value.trim() }));
   el.querySelector('#s-news-topic').addEventListener('change', (e) => update({ newsTopic: e.target.value.trim() }));
   el.querySelectorAll('[data-widget]').forEach((cb) => {

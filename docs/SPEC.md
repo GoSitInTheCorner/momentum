@@ -118,6 +118,31 @@ Rationale: v1 Home was a form to fill out (uninviting) and the FAB overlapped on
 ### Save feedback (fixes "couldn't tell if it saved")
 Add a subtle **autosave status indicator** ("Saving..." -> "Saved ✓") visible wherever data changes (sliders, journal, todos, etc.). Autosave stays silent-fast but now confirms.
 
+### v2.1 — Burchard's 10 Life Areas
+Expand the ratings check-in (in the Journal deep tab) from 3 to Brendon Burchard's **10 Life Areas**, each with a descriptor subtitle:
+- **Mental** - psychological well-being, mindfulness, emotional balance
+- **Physical** - vitality, nutrition, sleep, fitness
+- **Family** - depth, quality, presence with immediate family
+- **Friends** - social circle, support systems, community
+- **Finances** - wealth building, saving, financial health
+- **Mission** - work, career progress, your calling
+- **Spirit** - faith, the universe, inner peace
+- **Adventure** - fun, travel, exploration, new experiences
+- **Learning** - new skills and knowledge
+- **Growth** - self-improvement, discipline, personal development
+Keep the existing **Emotional** slider too (managing triggers/responses) so no data is lost; it can be toggled off in Settings (Burchard folds emotional into Mental).
+UX: show core mood (Mental/Emotional/Physical) first; the other 7 areas under an expandable "Rate more life areas" group - all optional per day (avoid daily-slider fatigue). Settings can toggle any area on/off.
+Review: add a **Wheel of Life radar chart** (Chart.js radar) showing average rating per area over the selected period. Data model: `days.ratings` gains keys per area (backward compatible with existing mental/emotional/physical).
+
+## v2.2 — Restructure: Tasks tab, Settings button, moon sign, declutter, opposing words (2026-08-27)
+
+1. **Settings off the tab bar → a gear button** in the header (top-right). Frees a tab slot.
+2. **New tab bar (5): Today · Journal · Tasks · Goals · Review.** To-dos get their own **Tasks tab** (today's list + reorder + goal-linking). Goals keeps only goals/milestones (goal-linking of tasks still works).
+3. **To-dos on Home:** a compact "Today's tasks" card on the launchpad — view, check off, quick-add inline. (This one card is editable on Home, by explicit user request.)
+4. **Moon sign:** astrology card shows **Sun sign + Moon sign** (both natal, computed from birth date; moon sign is approximate without birth time) + today's **moon phase**. Add an optional **birth time** field in Settings to make the moon sign exact. (Reference the moon-longitude→zodiac approach used in the HA `astro-orbital-lib.js`.)
+5. **Declutter Journal:** lead with the writing entry + past entries (+ Beliefs segment). Move the mood/health sliders, emotion tags, and done/learned under a collapsible **"Daily check-in ▾"** so the tab is focused, not a wall.
+6. **Home word widget → 6 opposing words (3 antonym pairs), NO definitions.** New curated `data/wordpairs.json` (40+ interesting/uncommon antonym pairs); pick 3 pairs/day by date. Display as pairs (WordA ⟷ WordB). Each word is tappable → fills+runs the existing dictionary look-up. Keep the "Look up any word" box.
+
 ### Constraints preserved
 402px mobile, PWA/offline for all CORE data. Weather/news/dictionary are additive ONLINE-only widgets (keyless; no secrets). App must fully function offline without them.
 

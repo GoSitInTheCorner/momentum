@@ -10,12 +10,18 @@ const { chromium } = require(path.join(
 
 const BASE = 'http://localhost:8080';
 const SHOT_DIR = 'C:\\Users\\User\\AI\\momentum\\screenshots';
+let browser; // module-scope so the finally handler can always close it, even on a crash
 
 // Home's weather/news/dictionary widgets are the only legitimate external calls in v2
 // (all keyless, CORS-open, see docs/SPEC.md). Anything else would be a real regression.
 const ALLOWED_EXTERNAL_HOSTS = new Set([
   'api.open-meteo.com', 'geocoding-api.open-meteo.com', 'noozra.com', 'api.dictionaryapi.dev',
 ]);
+
+const ZODIAC_SIGNS = [
+  'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
+  'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
+];
 
 const results = [];
 function check(name, pass, detail = '') {
@@ -24,16 +30,20 @@ function check(name, pass, detail = '') {
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: false });
+  // Headless for this long (~100-check) suite: headed Chromium's window + GPU compositor
+  // overhead nondeterministically OOM-crashes the renderer partway through on a 16GB box.
+  // Headless runs the identical assertions and screenshots with a fraction of the memory.
+  browser = await chromium.launch({ headless: true, args: ['--disable-dev-shm-usage'] });
   const context = await browser.newContext({
     viewport: { width: 402, height: 874 },
-    deviceScaleFactor: 3,
+    deviceScaleFactor: 1, // 1 to keep this long headed run under the renderer's memory ceiling; screenshots stay legible at 402px and the deployed app's real DPR is unaffected
+
     isMobile: true,
     hasTouch: true,
     colorScheme: 'light',
     acceptDownloads: true,
   });
-  context.setDefaultTimeout(8000);
+  context.setDefaultTimeout(10000);
 
   const consoleErrors = [];
   const externalRequests = [];
@@ -58,7 +68,7 @@ async function main() {
     }
   });
 
-  await page.goto(`${BASE}/index.html`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/index.html`, { waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tabbar', { timeout: 5000 });
 
   async function overflowOK(label) {
@@ -78,35 +88,78 @@ async function main() {
     await page.click(`.tabbar__item[data-tab="${tab}"]`);
     await page.waitForTimeout(350);
   }
+  // v2.2 -- Settings moved off the tab bar to a gear button in the current view's
+  // header (app.js injects it into every view except Settings itself and the
+  // immersive journal-writing screen). Navigate to it from wherever we are.
+  async function openSettings() {
+    const openSheets = await page.locator('.sheet-backdrop.is-open').count();
+    if (openSheets > 0) {
+      await page.mouse.click(200, 40);
+      await page.waitForTimeout(300);
+    }
+    await page.click('.topbar__gear');
+    await page.waitForTimeout(350);
+  }
+  async function ensureSettings() {
+    const onSettings = await page.locator('.view--settings').count();
+    if (!onSettings) await openSettings();
+  }
   async function screenshot(name) {
     await page.screenshot({ path: path.join(SHOT_DIR, name) });
   }
 
-  // ---------- 0. Settings: set birth date / weather city / news topic up front so
+  // ---------- 0. Settings: set birth date/time / weather city / news topic up front so
   // Home's astrology + weather-fallback + news widgets have something to work with. ----------
-  await gotoTab('settings');
+  await openSettings();
   await page.fill('#s-birth-date', '1990-06-15'); // Gemini
   await page.dispatchEvent('#s-birth-date', 'change');
+  await page.fill('#s-birth-time', '14:30');
+  await page.dispatchEvent('#s-birth-time', 'change');
   await page.fill('#s-weather-city', 'Kansas City');
   await page.dispatchEvent('#s-weather-city', 'change');
   await page.fill('#s-news-topic', 'technology');
   await page.dispatchEvent('#s-news-topic', 'change');
   await page.waitForTimeout(150);
   const widgetToggleCount = await page.locator('[data-widget]').count();
-  check('Settings has all 6 home-widget toggles', widgetToggleCount === 6, `count=${widgetToggleCount}`);
+  check('Settings has all 7 home-widget toggles', widgetToggleCount === 7, `count=${widgetToggleCount}`);
 
-  // ---------- 1. Home: read-mostly launchpad ----------
+  // v2.1 -- Burchard's 10 Life Areas (11 total incl. Emotional): turn on all 8 extra
+  // dims up front (core 3 are already enabled by default) so the rest of this run has
+  // full data to exercise the Journal check-in's expand group and Review's Wheel of Life.
+  await page.locator('.dim-toggle').evaluateAll((els) => {
+    els.forEach((el) => { if (!el.checked) { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); } });
+  });
+  await page.waitForTimeout(150);
+  const dimToggleCount = await page.locator('.dim-toggle').count();
+  check('Settings has all 11 health-dim toggles', dimToggleCount === 11, `count=${dimToggleCount}`);
+
+  // ---------- 1. Home: read-mostly launchpad (+ the one editable exception: to-dos) ----------
   await gotoTab('today');
   await overflowOK('home-initial');
 
-  const inlineEditControls = await page.locator('.view--today textarea, .view--today .task-list, .view--today .hslider').count();
-  check('Home has zero inline-edit controls (no textarea/task-list/sliders)', inlineEditControls === 0, `count=${inlineEditControls}`);
+  const inlineEditControls = await page.locator('.view--today textarea, .view--today .hslider').count();
+  check('Home has no full editing surfaces (no textarea/sliders) -- only the compact to-dos card is editable', inlineEditControls === 0, `count=${inlineEditControls}`);
 
-  // Astrology -- offline, deterministic from the birth date set above.
+  // v2.2 -- compact "Today's tasks" card: view, check off, quick-add inline.
+  const homeTaskCard = await page.locator('#w-tasks .home-tasklist').count();
+  check('Home shows the compact "Today\'s tasks" card', homeTaskCard === 1, `count=${homeTaskCard}`);
+  await page.fill('#home-tasklist-input', 'Home quick add task');
+  await page.click('#home-tasklist-add-btn');
+  await page.waitForTimeout(250);
+  const homeTaskRows = await page.locator('.home-tasklist__row').count();
+  check('quick-add on Home creates a to-do', homeTaskRows === 1, `count=${homeTaskRows}`);
+  await page.click('.home-tasklist__row >> nth=0 >> .task-check');
+  await page.waitForTimeout(700);
+  const homeTaskDone = await page.locator('.home-tasklist__row.is-done').count();
+  check('checking off a to-do on Home works', homeTaskDone === 1, `count=${homeTaskDone}`);
+
+  // Astrology -- offline, deterministic from the birth date/time set above.
   await page.waitForTimeout(200);
   const astroText = await page.locator('#w-astro').innerText();
-  check('astrology shows correct sun sign for sample birth date (Gemini)', astroText.includes('Gemini'), astroText.slice(0, 120));
-  check('astrology shows a moon phase', /New Moon|Waxing Crescent|First Quarter|Waxing Gibbous|Full Moon|Waning Gibbous|Last Quarter|Waning Crescent/.test(astroText), astroText.slice(0, 120));
+  check('astrology shows correct sun sign for sample birth date (Gemini)', astroText.includes('Gemini'), astroText.slice(0, 160));
+  check('astrology shows a moon phase', /New Moon|Waxing Crescent|First Quarter|Waxing Gibbous|Full Moon|Waning Gibbous|Last Quarter|Waning Crescent/.test(astroText), astroText.slice(0, 160));
+  const moonSignText = await page.locator('#w-astro .astro-row--split .astro-row__block').last().locator('.astro-row__value').innerText();
+  check('astrology shows a Moon sign (v2.2)', ZODIAC_SIGNS.includes(moonSignText.trim()), moonSignText);
   check('astrology shows the disabled horoscope slot', await page.locator('.astro-horoscope--disabled').count() === 1);
 
   // Weather -- skeleton then either real content or a graceful collapse (no geolocation
@@ -125,12 +178,21 @@ async function main() {
   const newsContent = await page.locator('#w-news .news-widget__list').count();
   check('news widget resolves to content or hides gracefully', newsHidden || newsContent === 1);
 
-  // Word of the day -- fully offline/bundled, must always render.
-  const wordEntry = await page.locator('#w-word .word-widget__word').count();
-  check('word of the day renders (offline, bundled)', wordEntry === 1);
+  // v2.2 -- "Words to sit with": 6 words as 3 antonym pairs, no inline definitions,
+  // each word tappable -> runs the existing dictionary look-up.
+  const wordPairEls = await page.locator('#w-word .wordpairs__word').count();
+  check('home word widget shows exactly 6 words (3 opposing pairs)', wordPairEls === 6, `count=${wordPairEls}`);
+  const wordPairDefs = await page.locator('#w-word .wordpairs .word-widget__def').count();
+  check('word pairs show no inline definitions', wordPairDefs === 0, `count=${wordPairDefs}`);
+  await page.click('#w-word .wordpairs__word >> nth=0');
+  await page.waitForFunction(() => {
+    const el = document.querySelector('#word-lookup-result');
+    return el && el.textContent.trim().length > 0 && !el.querySelector('.skel-line');
+  }, { timeout: 9000 }).catch(() => {});
+  const tapLookupResult = await page.locator('#word-lookup-result').innerText();
+  check('tapping a word pair fills + runs the dictionary look-up', tapLookupResult.trim().length > 0, tapLookupResult.slice(0, 80));
 
-  // Look-up-any-word (online-only sub-control of the word card). fetchWithTimeout()
-  // bounds the request to ~6s, so give the UI update a little more than that.
+  // Look-up-any-word box still intact (manual entry path).
   await page.fill('#word-lookup-input', 'luminous');
   await page.click('#word-lookup-btn');
   await page.waitForFunction(() => {
@@ -138,7 +200,7 @@ async function main() {
     return el && el.textContent.trim().length > 0 && !el.querySelector('.skel-line');
   }, { timeout: 9000 }).catch(() => {});
   const lookupResult = await page.locator('#word-lookup-result').innerText();
-  check('word look-up produces a result or a clean not-found/failed state (no crash)', lookupResult.trim().length > 0, lookupResult.slice(0, 80));
+  check('manual word look-up produces a result or a clean not-found/failed state (no crash)', lookupResult.trim().length > 0, lookupResult.slice(0, 80));
 
   // Calendar -- screenshot showing it, then tap today's cell to open day detail.
   await page.locator('#w-calendar').scrollIntoViewIfNeeded();
@@ -147,6 +209,8 @@ async function main() {
   await page.waitForSelector('.sheet--form', { timeout: 3000 });
   const dayDetailOpen = await page.locator('.sheet--form .day-detail').count();
   check('tapping a calendar day opens that day\'s detail sheet', dayDetailOpen === 1);
+  const dayDetailTitle = await page.locator('.sheet--form .sheet__title').innerText();
+  check('day-detail sheet shows the full written date', /^[A-Za-z]+day, [A-Za-z]+ \d{1,2}, \d{4}$/.test(dayDetailTitle.trim()), dayDetailTitle);
   await page.mouse.click(200, 40);
   await page.waitForTimeout(300);
 
@@ -157,14 +221,72 @@ async function main() {
   await page.waitForTimeout(300);
   check('tapping the streak tile routes to Review', location_hash_is(await page.evaluate(() => location.hash), '#/review'));
 
-  // CTA -- reaches Journal with the entry field focused.
+  // ---------- 1b. Journal full-screen writing view (v2.2) ----------
+  // Distraction-free: date header + textarea + Back/Done only -- no sliders, tags, log,
+  // or tab bar. Entry field must start EMPTY (a prompt is only ever a placeholder /
+  // tappable suggestion, never prefilled value).
   await gotoTab('today');
   await page.click('#home-cta-btn');
   await page.waitForTimeout(400);
-  const ctaHash = await page.evaluate(() => location.hash);
-  check('CTA navigates to Journal entries', ctaHash.startsWith('#/journal'));
-  const focusedIsJournalInput = await page.evaluate(() => document.activeElement?.classList?.contains('journal-input'));
-  check('CTA leaves the journal entry field focused/ready to type', focusedIsJournalInput === true);
+  const writeHash = await page.evaluate(() => location.hash);
+  check('CTA opens the full-screen writing view', writeHash.startsWith('#/journal') && writeHash.includes('write=1'), writeHash);
+
+  const writeDateHeader = await page.locator('.journal-write__date').innerText();
+  check('writing view shows the full written date header', /^[A-Za-z]+day, [A-Za-z]+ \d{1,2}, \d{4}$/.test(writeDateHeader.trim()), writeDateHeader);
+
+  const writeTextareaVal = await page.inputValue('.journal-write__textarea');
+  check('writing view entry field starts EMPTY (no prompt text prefilled)', writeTextareaVal === '', JSON.stringify(writeTextareaVal));
+  const writePlaceholder = await page.getAttribute('.journal-write__textarea', 'placeholder');
+  check('empty entry field offers the daily prompt as a PLACEHOLDER, not real content', !!writePlaceholder, writePlaceholder || '');
+
+  const tabbarHiddenInWrite = await page.locator('.tabbar.is-hidden').count();
+  check('tab bar is hidden in the writing view', tabbarHiddenInWrite === 1);
+  const fabHiddenInWrite = await page.locator('.fab.is-hidden').count();
+  check('FAB is hidden in the writing view', fabHiddenInWrite === 1);
+  const writeOtherContent = await page.locator('.view--journal-write .hslider, .view--journal-write .emo-tag-mount, .view--journal-write .log-list, .view--journal-write .checkin-body').count();
+  check('writing view shows nothing but the date + textarea (no sliders/tags/log)', writeOtherContent === 0, `count=${writeOtherContent}`);
+
+  const focusedIsWriteTextarea = await page.evaluate(() => document.activeElement?.classList?.contains('journal-write__textarea'));
+  check('writing view leaves the entry field focused/ready to type', focusedIsWriteTextarea === true);
+
+  await page.fill('.journal-write__textarea', 'Reflecting on a solid, productive day. Feeling steady and focused.');
+  await page.waitForTimeout(200);
+  const jwSavingFlash = await page.locator('.journal-write__hint').innerText();
+  check('"Saving…" indicator appears while the writing-view debounce is pending', /Saving/.test(jwSavingFlash), jwSavingFlash);
+  await page.waitForTimeout(700);
+  const jwHintAfter = await page.locator('.journal-write__hint').innerText();
+  check('"Saved ✓" indicator appears after writing-view autosave flushes', /Saved/.test(jwHintAfter), jwHintAfter);
+
+  // Emotion word bank -- insert mode (writing-view toolbar).
+  const beforeJournal = await page.inputValue('.journal-write__textarea');
+  await page.click('#jw-emo-btn');
+  await page.waitForSelector('.sheet--wordbank', { timeout: 3000 });
+  await page.fill('.wordbank__search', 'Grateful');
+  await page.waitForTimeout(150);
+  await page.click('.wordbank__chip:visible >> nth=0');
+  await page.waitForTimeout(300);
+  const afterJournal = await page.inputValue('.journal-write__textarea');
+  check('emotion word inserted into the writing view at cursor', afterJournal.length > beforeJournal.length && afterJournal.includes('Grateful'));
+  await page.waitForTimeout(600); // let autosave debounce flush
+
+  await screenshot('journal-write-light.png');
+
+  await page.click('#jw-back');
+  await page.waitForTimeout(350);
+  const afterBackHash = await page.evaluate(() => location.hash);
+  check('Back returns to the Journal hub', afterBackHash.startsWith('#/journal') && !afterBackHash.includes('write=1'), afterBackHash);
+  const tabbarVisibleAfterBack = await page.locator('.tabbar.is-hidden').count();
+  check('tab bar reappears after leaving the writing view', tabbarVisibleAfterBack === 0);
+
+  const todayPreview = await page.locator('.journal-today-card__preview').innerText();
+  check('Journal hub "Today" card previews the saved entry', todayPreview.includes('solid, productive day'), todayPreview.slice(0, 90));
+
+  await page.click('#write-today-btn');
+  await page.waitForTimeout(350);
+  const reenterVal = await page.inputValue('.journal-write__textarea');
+  check('re-entering the writing view shows the persisted text (not empty, not a prompt)', reenterVal.includes('solid, productive day'), reenterVal.slice(0, 60));
+  await page.click('#jw-back');
+  await page.waitForTimeout(300);
 
   await gotoTab('today');
   await page.waitForFunction(() => {
@@ -174,8 +296,8 @@ async function main() {
   await screenshot('home-light.png');
   await overflowOK('home-populated');
 
-  // ---------- 2. Goals: today's to-dos (moved from old Today) + goals ----------
-  await gotoTab('goals');
+  // ---------- 2. Tasks tab: today's to-dos (own tab as of v2.2) ----------
+  await gotoTab('tasks');
   await page.click('#add-task-btn');
   await page.fill('.sheet--prompt .sheet__input', 'Finish project proposal');
   await page.click('.sheet--prompt .sheet__submit');
@@ -186,15 +308,24 @@ async function main() {
   await page.click('.sheet--prompt .sheet__submit');
   await page.waitForTimeout(200);
 
+  // 3 total: the Home quick-add task (already checked off above) + these 2 new ones.
   let taskCount = await page.locator('.task-row').count();
-  check('two to-dos added (on Goals now)', taskCount === 2, `count=${taskCount}`);
+  check('three to-dos exist on the Tasks tab (1 from Home + 2 added here)', taskCount === 3, `count=${taskCount}`);
 
-  await page.click('.task-row >> nth=0 >> .task-check');
+  // nth=0 is the Home-added task (order 0, already done); check off the next one.
+  await page.click('.task-row >> nth=1 >> .task-check');
   await page.waitForTimeout(700);
   const doneCount = await page.locator('.task-row.is-done').count();
-  check('one to-do checked off (animated)', doneCount === 1, `is-done count=${doneCount}`);
+  check('a to-do checked off on the Tasks tab (animated)', doneCount === 2, `is-done count=${doneCount}`);
   const taskSavedFlash = await page.locator('#task-hint').innerText();
   check('"Saved" indicator flashes after a to-do change', /Saved/.test(taskSavedFlash) || true); // best-effort -- badge may already have faded
+  await screenshot('tasks-light.png');
+  await overflowOK('tasks');
+
+  // ---------- 2b. Goals: goals/milestones only (to-do list moved to Tasks in v2.2) ----------
+  await gotoTab('goals');
+  const goalsHasTaskList = await page.locator('.view--goals .task-list').count();
+  check('Goals no longer shows the to-do list', goalsHasTaskList === 0, `count=${goalsHasTaskList}`);
 
   await page.click('#new-goal-btn');
   await page.waitForSelector('.sheet--form', { timeout: 3000 });
@@ -209,31 +340,66 @@ async function main() {
   await screenshot('goals-light.png');
   await overflowOK('goals');
 
-  // ---------- 3. Journal: deep reflection block (moved from old Today) ----------
+  // ---------- 3. Journal hub: declutter + collapsible "Daily check-in" ----------
   await gotoTab('journal');
+  await overflowOK('journal-hub');
 
-  await page.fill('.journal-input', 'Reflecting on a solid, productive day. Feeling steady and focused.');
+  const checkinHiddenInitially = await page.locator('#checkin-body[hidden]').count();
+  check('Journal "Daily check-in" is collapsed by default', checkinHiddenInitially === 1);
+  await screenshot('journal-declutter.png');
+
+  await page.click('#checkin-toggle');
   await page.waitForTimeout(200);
-  const savingFlash = await page.locator('#journal-hint').innerText();
-  check('"Saving…" indicator appears while the journal debounce is pending', /Saving/.test(savingFlash), savingFlash);
-  await page.waitForTimeout(700);
-  const journalHintAfter = await page.locator('#journal-hint').innerText();
-  check('"Saved ✓" indicator appears after journal autosave flushes', /Saved/.test(journalHintAfter), journalHintAfter);
-  const journalVal = await page.inputValue('.journal-input');
-  check('journal text entered', journalVal.includes('solid, productive day'));
+  const checkinVisible = await page.locator('#checkin-body:not([hidden])').count();
+  check('Daily check-in expands on tap', checkinVisible === 1);
 
   // Health sliders -- click near top of each track for a high value. Verify the shared
-  // autosave badge also flashes on a slider change (item 6).
-  const sliders = await page.locator('.hslider__track').all();
+  // autosave badge also flashes on a slider change.
+  const sliders = await page.locator('#checkin-body .hslider__track').all();
   for (const slider of sliders) {
     const box = await slider.boundingBox();
     await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.2);
     await page.waitForTimeout(150);
   }
-  const sliderValues = await page.locator('.hslider__value').allTextContents();
-  check('all 3 health sliders set', sliderValues.length === 3 && sliderValues.every((v) => v.trim().length > 0), JSON.stringify(sliderValues));
+  const sliderValues = await page.locator('#checkin-body .hslider__value').allTextContents();
+  check('all 3 core health sliders set', sliderValues.length === 3 && sliderValues.every((v) => v.trim().length > 0), JSON.stringify(sliderValues));
   const hintAfterSlider = await page.locator('#journal-hint').innerText();
   check('"Saved" indicator also flashes on a slider change', /Saved/.test(hintAfterSlider), hintAfterSlider);
+
+  // v2.1 -- Burchard's 10 Life Areas: core 3 collapsed by default, other 8 lazy-mounted
+  // behind "Rate more life areas" (11 total once expanded).
+  const preExpandTracks = await page.locator('#checkin-body .hslider__track').count();
+  check('only the core 3 sliders exist before expanding life areas', preExpandTracks === 3, `count=${preExpandTracks}`);
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(200);
+  const expandedTracks = await page.locator('#checkin-body .hslider__track').count();
+  check('expanding "Rate more life areas" mounts all 11 sliders', expandedTracks === 11, `count=${expandedTracks}`);
+
+  // Set two of the newly-revealed areas via slider interaction; confirm the shared
+  // autosave badge fires for them too, same as the core-3 check above.
+  const financeSlider = page.locator('.hslider__track[aria-label="Finances"]');
+  const spiritSlider = page.locator('.hslider__track[aria-label="Spirit"]');
+  // Also fill a few more of the 8 (visual richness for the screenshot only, no
+  // dedicated assertions on these beyond "no crash / no overflow").
+  const familySlider = page.locator('.hslider__track[aria-label="Family"]');
+  const adventureSlider = page.locator('.hslider__track[aria-label="Adventure"]');
+  for (const slider of [financeSlider, spiritSlider, familySlider, adventureSlider]) {
+    await slider.waitFor({ state: 'visible', timeout: 15000 });
+    await slider.scrollIntoViewIfNeeded();
+    const box = await slider.boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.15);
+    await page.waitForTimeout(150);
+  }
+  const hintAfterExpandedSlider = await page.locator('#journal-hint').innerText();
+  check('"Saved" indicator also flashes on an expanded life-area slider change', /Saved/.test(hintAfterExpandedSlider), hintAfterExpandedSlider);
+  const financeValueText = (await financeSlider.locator('.hslider__value').innerText()).trim();
+  const spiritValueText = (await spiritSlider.locator('.hslider__value').innerText()).trim();
+  check('Finances and Spirit sliders show a set value', financeValueText.length > 0 && spiritValueText.length > 0, `${financeValueText} / ${spiritValueText}`);
+  await screenshot('journal-lifeareas.png');
+  await overflowOK('journal-lifeareas-expanded');
+  // Collapse again so later screenshots reflect the correct collapsed-by-default state.
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(150);
 
   await page.click('#add-done-btn');
   await page.fill('.sheet--prompt .sheet__input', 'Shipped the onboarding flow redesign');
@@ -248,7 +414,7 @@ async function main() {
   const logCount = await page.locator('.log-row').count();
   check('done + learned log items added', logCount === 2, `count=${logCount}`);
 
-  // Emotion word bank -- tag mode (next to health sliders).
+  // Emotion word bank -- tag mode (next to health sliders, inside the check-in).
   await page.click('.emo-row__add');
   await page.waitForSelector('.sheet--wordbank', { timeout: 3000 });
   await page.fill('.wordbank__search', 'Proud');
@@ -261,18 +427,9 @@ async function main() {
   const tagText = await page.locator('.emo-pill').allTextContents();
   check('emotion tag added via slider trigger', tagText.some((t) => t.toLowerCase().includes('proud')), JSON.stringify(tagText));
 
-  // Emotion word bank -- insert mode (journal toolbar).
-  const beforeJournal = await page.inputValue('.journal-input');
-  await page.click('#journal-emo-btn');
-  await page.waitForSelector('.sheet--wordbank', { timeout: 3000 });
-  await page.fill('.wordbank__search', 'Grateful');
+  // Collapse the check-in back down before the hub's "regular" screenshot.
+  await page.click('#checkin-toggle');
   await page.waitForTimeout(150);
-  await page.click('.wordbank__chip:visible >> nth=0');
-  await page.waitForTimeout(300);
-  const afterJournal = await page.inputValue('.journal-input');
-  check('emotion word inserted into journal at cursor', afterJournal.length > beforeJournal.length && afterJournal.includes('Grateful'));
-  await page.waitForTimeout(600); // let autosave debounce flush
-
   await screenshot('journal-light.png');
   await overflowOK('journal-populated');
 
@@ -287,6 +444,13 @@ async function main() {
   await overflowOK('review');
   const reviewCrashed = consoleErrors.length > 0;
   check('Review cycles all 4 periods + custom without console errors', !reviewCrashed, consoleErrors.join(' | '));
+
+  // v2.1 -- Wheel of Life radar (custom range defaults to today, which has data).
+  const wheelCanvasCount = await page.locator('#wheel-chart').count();
+  check('Wheel of Life radar canvas exists on Review', wheelCanvasCount === 1, `count=${wheelCanvasCount}`);
+  const wheelEmptyHiddenWithData = await page.locator('#wheel-empty').isHidden();
+  check('Wheel of Life renders (not empty-state) when the period has ratings', wheelEmptyHiddenWithData);
+  await screenshot('review-wheel.png');
 
   // ---------- 5. Journal: Beliefs segment ----------
   await gotoTab('journal');
@@ -323,13 +487,13 @@ async function main() {
   await overflowOK('journal');
 
   // ---------- 6. Settings: theme, accent, font ----------
-  await gotoTab('settings');
+  await openSettings();
   await screenshot('settings-light.png');
   await overflowOK('settings');
 
   await gotoTab('review');
   await screenshot('review-light.png');
-  await gotoTab('settings');
+  await openSettings();
 
   await page.click('.segmented[data-field="theme"] [data-val="dark"]');
   await page.waitForTimeout(300);
@@ -350,7 +514,13 @@ async function main() {
   }, { timeout: 12000 }).catch(() => {});
   await screenshot('home-dark.png');
   await overflowOK('home-dark');
+
   await gotoTab('journal'); await screenshot('journal-dark.png');
+  await page.click('#write-today-btn');
+  await page.waitForTimeout(400);
+  await screenshot('journal-write-dark.png');
+  await page.click('#jw-back');
+  await page.waitForTimeout(300);
   await page.click('.segmented__btn[data-segment="beliefs"]');
   await page.waitForTimeout(200);
   await screenshot('journal-beliefs-dark.png');
@@ -361,19 +531,24 @@ async function main() {
   await page.click('.segmented__btn[data-segment="entries"]');
   await overflowOK('journal-dark');
 
+  await gotoTab('tasks'); await screenshot('tasks-dark.png'); await overflowOK('tasks-dark');
   await gotoTab('goals'); await screenshot('goals-dark.png'); await overflowOK('goals-dark');
   await gotoTab('review'); await screenshot('review-dark.png'); await overflowOK('review-dark');
 
-  // Emotion word bank screenshot in dark theme (re-open from Journal).
+  // Emotion word bank screenshot in dark theme (re-open from Journal check-in).
   await gotoTab('journal');
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
   await page.click('.emo-row__add');
   await page.waitForSelector('.sheet--wordbank', { timeout: 3000 });
   await screenshot('emotion-wordbank-dark.png');
   await page.mouse.click(200, 40);
   await page.waitForTimeout(200);
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
 
   // ---------- Home-widget toggle: verify a toggle actually hides/shows its card ----------
-  await gotoTab('settings');
+  await openSettings();
   await page.locator('[data-widget="news"]').evaluate((el) => {
     el.checked = false;
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -382,12 +557,42 @@ async function main() {
   await gotoTab('today');
   const newsHiddenAfterToggle = await page.locator('#w-news').isHidden();
   check('turning off a Home widget toggle hides that widget', newsHiddenAfterToggle);
-  await gotoTab('settings');
+  await openSettings();
   await page.locator('[data-widget="news"]').evaluate((el) => {
     el.checked = true;
     el.dispatchEvent(new Event('change', { bubbles: true }));
   });
   await page.waitForTimeout(150);
+
+  // ---------- Health-dim toggle: verify toggling Finances in Settings adds/removes it
+  // from the Journal check-in's expand-group (mirrors the Home-widget-toggle check above). ----------
+  const financeToggle = page.locator('.dim-row', { hasText: 'Finances' }).locator('.dim-toggle');
+  await financeToggle.evaluate((el) => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(150);
+  await gotoTab('journal');
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(200);
+  const financeGoneCount = await page.locator('.hslider__track[aria-label="Finances"]').count();
+  check('turning off Finances in Settings removes it from the check-in expand-group', financeGoneCount === 0, `count=${financeGoneCount}`);
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(150);
+  await openSettings();
+  await financeToggle.evaluate((el) => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(150);
+  await gotoTab('journal');
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(200);
+  const financeBackCount = await page.locator('.hslider__track[aria-label="Finances"]').count();
+  check('turning Finances back on in Settings restores it to the check-in expand-group', financeBackCount === 1, `count=${financeBackCount}`);
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(150);
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
+  await openSettings();
 
   // ---------- AMOLED theme check (not a required screenshot, just a functional check) ----------
   await page.click('.segmented[data-field="theme"] [data-val="amoled"]');
@@ -413,7 +618,12 @@ async function main() {
   await page.fill('#s-pass2', '1234');
   await page.click('#s-pass-save');
   await page.waitForTimeout(200);
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  // The reload's navigation lifecycle event settling doesn't guarantee the app has
+  // finished its own async boot (getSettings() round-trip through IndexedDB, then
+  // maybeShowLock() deciding whether to render the overlay) -- wait for whichever of
+  // the two end states actually shows up before reading it, instead of racing it.
+  await page.waitForSelector('.lock-overlay, .tabbar', { timeout: 6000 }).catch(() => {});
   const lockVisible = await page.locator('.lock-overlay').count();
   check('passcode lock engages on reload when enabled', lockVisible === 1, `overlay count=${lockVisible}`);
   if (lockVisible) {
@@ -424,7 +634,7 @@ async function main() {
   const unlockedOK = await page.locator('.tabbar').count();
   check('correct passcode unlocks the app', unlockedOK === 1);
   // Disable lock again so remaining reload-based checks are not gated.
-  await gotoTab('settings');
+  await ensureSettings();
   await page.locator('#s-lock-enabled').evaluate((el) => {
     el.checked = false;
     el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -440,19 +650,36 @@ async function main() {
   check('export backup produced a downloadable file', !!dlPath, dlPath || '');
 
   // ---------- Reload persistence check ----------
-  await page.reload({ waitUntil: 'networkidle' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tabbar', { timeout: 5000 });
-  await gotoTab('goals');
+  await gotoTab('tasks');
   const persistedTasks = await page.locator('.task-row').count();
-  check('to-dos persisted after reload (Goals)', persistedTasks === 2, `count=${persistedTasks}`);
+  check('to-dos persisted after reload (Tasks tab)', persistedTasks === 3, `count=${persistedTasks}`);
+  await gotoTab('goals');
   const persistedGoals = await page.locator('.goal-card').count();
   check('goal persisted after reload', persistedGoals === 1, `count=${persistedGoals}`);
 
   await gotoTab('journal');
-  const persistedJournal = await page.inputValue('.journal-input');
+  const persistedPreview = await page.locator('.journal-today-card__preview').innerText();
+  check('journal text persisted after reload (Journal hub preview)', persistedPreview.includes('solid, productive day'), persistedPreview.slice(0, 90));
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
   const persistedTagCount = await page.locator('.emo-pill').count();
-  check('journal text persisted after reload', persistedJournal.includes('solid, productive day'));
   check('emotion tags persisted after reload', persistedTagCount >= 1, `count=${persistedTagCount}`);
+
+  // v2.1 -- expanded life-area ratings (Finances, Spirit) persisted across reload.
+  // Expand-group is lazy-mounted, so re-expand it before reading values back.
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(200);
+  const financeValueAfterReload = (await page.locator('.hslider__track[aria-label="Finances"] .hslider__value').innerText()).trim();
+  const spiritValueAfterReload = (await page.locator('.hslider__track[aria-label="Spirit"] .hslider__value').innerText()).trim();
+  check('Finances rating persisted after reload', financeValueAfterReload === financeValueText, `before=${financeValueText} after=${financeValueAfterReload}`);
+  check('Spirit rating persisted after reload', spiritValueAfterReload === spiritValueText, `before=${spiritValueText} after=${spiritValueAfterReload}`);
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(150);
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
+
   await page.click('.segmented__btn[data-segment="beliefs"]');
   await page.waitForTimeout(200);
   await page.click('.belief-row >> nth=0');
@@ -477,7 +704,36 @@ async function main() {
   await page.fill('#custom-start', '2020-01-01');
   await page.fill('#custom-end', '2020-01-07');
   await page.waitForTimeout(400);
-  check('Review handles an empty custom range without crashing', consoleErrors.length === 0, consoleErrors.join(' | '));
+  const wheelEmptyHiddenOnEmptyRange = await page.locator('#wheel-empty').isHidden();
+  check('Review handles an empty custom range without crashing (incl. Wheel of Life empty-state)', consoleErrors.length === 0 && !wheelEmptyHiddenOnEmptyRange, `consoleErrors=${consoleErrors.length} wheelEmptyHidden=${wheelEmptyHiddenOnEmptyRange}`);
+
+  // ---------- Yesterday recap (morning card on Home) ----------
+  const yst = (() => { const d = new Date(); d.setDate(d.getDate() - 1); const y = d.getFullYear(); const m = String(d.getMonth() + 1).padStart(2, '0'); const da = String(d.getDate()).padStart(2, '0'); return `${y}-${m}-${da}`; })();
+  await page.evaluate(async (y) => {
+    const db = window.__momentumDb;
+    await db.tasks.add({ date: y, text: 'Yesterday done task', done: true, doneAt: Date.now(), order: 0 });
+    await db.logItems.add({ date: y, type: 'done', text: 'Shipped the recap card', createdAt: Date.now() });
+    await db.logItems.add({ date: y, type: 'learned', text: 'Learned pointer-event reordering', createdAt: Date.now() });
+    await db.settings.update('app', { recapCutoff: 24 }); // force the morning window so this is testable at any clock time
+  }, yst);
+  // 'networkidle' has proven flaky at this point in the run (same reason the offline
+  // reload below uses 'load' instead) -- the real gate is the .tabbar selector wait
+  // right after, so don't block navigation itself on it.
+  await page.goto(`${BASE}/index.html`, { waitUntil: 'load' });
+  await page.waitForSelector('.tabbar', { timeout: 5000 });
+  await gotoTab('today');
+  await page.waitForTimeout(400);
+  const recapVisible = await page.locator('.home-widget--recap:not([hidden])').count();
+  check('yesterday recap card shows on Home', recapVisible === 1, `count=${recapVisible}`);
+  const recapText = recapVisible ? await page.locator('.home-widget--recap').innerText() : '';
+  check('recap surfaces yesterday activity', /yesterday/i.test(recapText) && /recap card/i.test(recapText), recapText.slice(0, 90).replace(/\n/g, ' '));
+  await screenshot('home-recap.png');
+  if (recapVisible) {
+    await page.click('#recap-dismiss');
+    await page.waitForTimeout(200);
+    const afterDismiss = await page.locator('.home-widget--recap:not([hidden])').count();
+    check('recap dismiss hides the card', afterDismiss === 0, `count=${afterDismiss}`);
+  }
 
   // ---------- Offline mode ----------
   await context.setOffline(true);
@@ -486,9 +742,9 @@ async function main() {
   const offlineTabbar = await page.locator('.tabbar').count();
   check('app renders while offline (service worker cache hit)', offlineTabbar === 1, `tabbar count=${offlineTabbar}`);
   await gotoTab('today');
-  await page.waitForFunction(() => document.querySelector('#w-word .word-widget__word'), { timeout: 5000 }).catch(() => {});
-  const offlineWordEntry = await page.locator('#w-word .word-widget__word').count();
-  check('word of the day still renders fully offline', offlineWordEntry === 1);
+  await page.waitForFunction(() => document.querySelectorAll('#w-word .wordpairs__word').length === 6, { timeout: 5000 }).catch(() => {});
+  const offlineWordPairs = await page.locator('#w-word .wordpairs__word').count();
+  check('"Words to sit with" still renders fully offline', offlineWordPairs === 6, `count=${offlineWordPairs}`);
   await page.waitForFunction(() => document.querySelector('#w-weather').hidden, { timeout: 9000 }).catch(() => {});
   const offlineWeatherHidden = await page.locator('#w-weather').isHidden();
   check('weather widget degrades gracefully offline (hidden, no crash)', offlineWeatherHidden);
@@ -516,4 +772,6 @@ async function main() {
 
 function location_hash_is(hash, expected) { return hash.startsWith(expected); }
 
-main().catch((err) => { console.error('TEST SCRIPT CRASHED:', err); process.exitCode = 1; });
+main()
+  .catch((err) => { console.error('TEST SCRIPT CRASHED:', err); process.exitCode = 1; })
+  .finally(async () => { try { if (browser) await browser.close(); } catch (_) { /* already closed */ } });

@@ -1,7 +1,7 @@
 // sw.js -- precaches the full app shell + vendor libs so Momentum works completely
 // offline. Cache-first for everything precached; network fallback (same-origin only,
 // this app makes no external calls) for anything else.
-const CACHE_NAME = 'momentum-v2';
+const CACHE_NAME = 'momentum-v2-2';
 const PRECACHE_URLS = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const PRECACHE_URLS = [
   './js/views/journal.js',
   './js/views/review.js',
   './js/views/goals.js',
+  './js/views/tasks.js',
   './js/views/settings.js',
   './js/components/tabbar.js',
   './js/components/fab.js',
@@ -32,7 +33,10 @@ const PRECACHE_URLS = [
   './js/services/news.js',
   './js/services/dictionary.js',
   './js/services/wordbank.js',
+  './js/services/wordpairs.js',
+  './js/services/moon.js',
   './data/words.json',
+  './data/wordpairs.json',
   './vendor/dexie.min.js',
   './vendor/chart.umd.min.js',
   './assets/icon-192.png',

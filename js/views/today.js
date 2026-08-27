@@ -1,13 +1,17 @@
-// views/today.js -- Home: a read-mostly launchpad. Arrive & glance, never edit here.
-// Deep editing lives on Journal (reflection + sliders + emotions + log) and Goals
-// (to-dos + goals). See docs/SPEC.md "v2 -- Home as an inviting launchpad".
-import { todayStr } from '../db.js';
-import { getSettings, getTasksForDate, getActivityStreak, getDay } from '../store.js';
+// views/today.js -- Home: a read-mostly launchpad. Arrive & glance; the one exception
+// is the compact "Today's tasks" card (v2.2, check off + quick-add in place). Deeper
+// editing lives on Journal (writing + check-in), Tasks (full to-do list), and Goals
+// (goals/milestones). See docs/SPEC.md "v2 -- Home as an inviting launchpad" + "v2.2".
+import { todayStr, addDays } from '../db.js';
+import {
+  getSettings, getTasksForDate, getActivityStreak, getDay, getLogForDate, addTask, toggleTask,
+} from '../store.js';
 import { createHomeCalendar } from '../components/homecalendar.js';
 import { getWeather } from '../services/weather.js';
 import { getHeadlines } from '../services/news.js';
-import { wordForDate } from '../services/wordbank.js';
+import { pairsForDate } from '../services/wordpairs.js';
 import { lookupWord } from '../services/dictionary.js';
+import { moonSignFor } from '../services/moon.js';
 import { promptsForToday } from './journal.js';
 import { escapeHtml, formatWeekday } from '../util.js';
 
@@ -80,6 +84,7 @@ export async function renderToday(root) {
       <h1 class="topbar__title">${formatWeekday(date)}</h1>
     </header>
     <div class="scroll-area">
+      <section class="card home-widget home-widget--recap" id="w-recap" hidden></section>
       <section class="card home-widget home-widget--weather" id="w-weather" ${w.weather ? '' : 'hidden'}></section>
       <section class="card home-widget home-widget--news" id="w-news" ${w.news ? '' : 'hidden'}></section>
       <section class="card home-widget home-widget--word" id="w-word" ${w.wordOfDay ? '' : 'hidden'}></section>
@@ -89,6 +94,8 @@ export async function renderToday(root) {
         <p class="home-cta__prompt" id="home-prompt">${escapeHtml(promptsForToday()[0])}</p>
         <button class="btn btn--home-cta" id="home-cta-btn">Write today's entry &rarr;</button>
       </section>
+
+      <section class="card home-widget home-widget--tasks" id="w-tasks" ${w.todayTasks ? '' : 'hidden'}></section>
 
       <section class="card home-widget home-widget--calendar" id="w-calendar" ${w.calendar ? '' : 'hidden'}>
         <div class="card__title-row"><h2 class="card__title">Your month</h2></div>
@@ -101,8 +108,10 @@ export async function renderToday(root) {
   `;
   root.appendChild(view);
 
+  // v2.2 -- the CTA now opens the dedicated full-screen writing view directly (no
+  // detour through the Journal hub), see docs/SPEC.md's Journal-writing refinement.
   view.querySelector('#home-cta-btn').addEventListener('click', () => {
-    location.hash = '#/journal?segment=entries&focus=1';
+    location.hash = '#/journal?write=1';
   });
 
   if (w.calendar) {
@@ -115,7 +124,9 @@ export async function renderToday(root) {
   if (w.news) renderNewsWidget(view.querySelector('#w-news'), settings);
   if (w.wordOfDay) renderWordWidget(view.querySelector('#w-word'), date);
   if (w.astrology) renderAstroWidget(view.querySelector('#w-astro'), settings);
+  if (w.todayTasks) renderTasksWidget(view.querySelector('#w-tasks'), date);
   if (w.atAGlance) renderGlanceWidget(view.querySelector('#w-glance'), settings, date);
+  if (w.yesterdayRecap !== false) renderRecapWidget(view.querySelector('#w-recap'), settings, date);
 }
 
 function greeting() {
@@ -123,6 +134,59 @@ function greeting() {
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+// Morning "Yesterday" recap card -- the first thing you see, before the cutoff hour.
+// Surfaces yesterday's wins so the day starts with acknowledgement. Dismissable.
+async function renderRecapWidget(el, settings, date) {
+  try {
+    const yesterday = addDays(date, -1);
+    const cutoff = typeof settings.recapCutoff === 'number' ? settings.recapCutoff : 12;
+    const dismissed = sessionStorage.getItem('momentum-recap-dismissed') === yesterday;
+    if (new Date().getHours() >= cutoff || dismissed) { el.hidden = true; return; }
+
+    const [day, tasks, logs] = await Promise.all([
+      getDay(yesterday), getTasksForDate(yesterday), getLogForDate(yesterday),
+    ]);
+    const doneTasks = tasks.filter((t) => t.done);
+    const doneItems = logs.filter((l) => l.type === 'done');
+    const learnedItems = logs.filter((l) => l.type === 'learned');
+    const hasRatings = day && day.ratings && Object.keys(day.ratings).length > 0;
+    const wroteJournal = day && day.journal && day.journal.trim();
+    if (!doneTasks.length && !doneItems.length && !learnedItems.length && !hasRatings && !wroteJournal) {
+      el.hidden = true; return;
+    }
+    const mood = moodFor(day || {}, settings.ratingScale);
+    const stat = (t) => `<span style="opacity:.72">${t}</span>`;
+    el.hidden = false;
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+        <div class="topbar__eyebrow">Yesterday &middot; ${escapeHtml(formatWeekday(yesterday))}</div>
+        <button class="icon-btn" id="recap-dismiss" aria-label="Dismiss recap">&times;</button>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;font-size:.9rem;">
+        ${doneTasks.length ? stat('&#10003; ' + doneTasks.length + ' task' + (doneTasks.length === 1 ? '' : 's') + ' done') : ''}
+        ${doneItems.length ? stat(doneItems.length + ' accomplished') : ''}
+        ${learnedItems.length ? stat(learnedItems.length + ' learned') : ''}
+        ${mood && mood.kind === 'emoji' ? `<span>${mood.value}</span>` : (mood ? stat(escapeHtml(mood.value)) : '')}
+      </div>
+      ${(doneItems.length || learnedItems.length) ? `
+        <ul style="list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;">
+          ${[...doneItems.slice(0, 3), ...learnedItems.slice(0, 2)].map((l) => `
+            <li style="display:flex;gap:8px;align-items:baseline;font-size:.92rem;">
+              <span style="flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:${l.type === 'learned' ? '#4a6fa5' : '#c1622d'};transform:translateY(-1px);"></span>
+              <span>${escapeHtml(l.text)}</span>
+            </li>`).join('')}
+        </ul>` : ''}
+    `;
+    el.querySelector('#recap-dismiss').addEventListener('click', () => {
+      sessionStorage.setItem('momentum-recap-dismissed', yesterday);
+      el.hidden = true;
+    });
+  } catch (err) {
+    console.warn('recap widget failed', err);
+    el.hidden = true;
+  }
 }
 
 async function renderWeatherWidget(el, settings) {
@@ -165,28 +229,35 @@ async function renderNewsWidget(el, settings) {
   }
 }
 
+// v2.2 -- "Words to sit with": 6 words as 3 opposing antonym pairs, no definitions.
+// Each word is tappable -> fills + runs the existing dictionary look-up below (so
+// curiosity about a word leads straight to its actual meaning instead of a bundled
+// one). See data/wordpairs.json + services/wordpairs.js for the offline pair picker.
 async function renderWordWidget(el, date) {
   el.innerHTML = `<div class="home-widget__skeleton"><div class="skel-line skel-line--w50"></div><div class="skel-line skel-line--w90"></div></div>`;
   try {
     const [y, m, d] = date.split('-').map(Number);
-    const entry = await wordForDate(new Date(y, m - 1, d));
+    const pairs = await pairsForDate(new Date(y, m - 1, d));
     el.innerHTML = `
-      <div class="card__title-row"><h2 class="card__title">Word of the day</h2></div>
-      ${entry ? `
-        <div class="word-widget__entry">
-          <span class="word-widget__word">${escapeHtml(entry.word)}</span>
-          <span class="word-widget__pos">${escapeHtml(entry.partOfSpeech)}</span>
-          <p class="word-widget__def">${escapeHtml(entry.definition)}</p>
-          ${entry.example ? `<p class="word-widget__example">&ldquo;${escapeHtml(entry.example)}&rdquo;</p>` : ''}
+      <div class="card__title-row"><h2 class="card__title">Words to sit with</h2></div>
+      ${pairs.length ? `
+        <div class="wordpairs">
+          ${pairs.map((p) => `
+            <div class="wordpairs__row">
+              <button type="button" class="wordpairs__word" data-word="${escapeHtml(p.a)}">${escapeHtml(p.a)}</button>
+              <span class="wordpairs__glyph" aria-hidden="true">&#10231;</span>
+              <button type="button" class="wordpairs__word" data-word="${escapeHtml(p.b)}">${escapeHtml(p.b)}</button>
+            </div>
+          `).join('')}
         </div>
-      ` : `<p class="empty-hint">No word bank available.</p>`}
+      ` : `<p class="empty-hint">No word pairs available.</p>`}
       <div class="word-lookup">
         <label class="field-label">Look up any word</label>
         <div class="word-lookup__row">
           <input type="text" class="text-field word-lookup__input" id="word-lookup-input" placeholder="e.g. luminous" ${navigator.onLine ? '' : 'disabled'} />
           <button class="chip-btn word-lookup__btn" id="word-lookup-btn" ${navigator.onLine ? '' : 'disabled'}>Look up</button>
         </div>
-        ${navigator.onLine ? '' : '<p class="settings-hint">Look-up needs a connection -- word of the day still works offline.</p>'}
+        ${navigator.onLine ? '' : '<p class="settings-hint">Look-up needs a connection -- the word pairs above still work offline.</p>'}
         <div class="word-lookup__result" id="word-lookup-result"></div>
       </div>
     `;
@@ -211,14 +282,24 @@ async function renderWordWidget(el, date) {
         </div>
       `;
     }
+    el.querySelectorAll('.wordpairs__word').forEach((wbtn) => {
+      wbtn.addEventListener('click', () => {
+        input.value = wbtn.dataset.word;
+        doLookup();
+      });
+    });
     if (btn) btn.addEventListener('click', doLookup);
     if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doLookup(); } });
   } catch (err) {
-    console.warn('word-of-day widget failed', err);
+    console.warn('words-to-sit-with widget failed', err);
     el.hidden = true; el.innerHTML = '';
   }
 }
 
+// v2.2 -- adds a natal Moon sign next to the Sun sign (see services/moon.js). Without
+// a birth time the Moon sign is approximate (the Moon changes sign every ~2-2.5 days,
+// so a birth right at the boundary can land on the wrong side) -- an optional birth
+// time in Settings refines it to exact.
 function renderAstroWidget(el, settings) {
   try {
     if (!settings.birthDate) {
@@ -229,24 +310,32 @@ function renderAstroWidget(el, settings) {
       return;
     }
     const z = sunSignFor(settings.birthDate);
+    const moonSign = moonSignFor(settings.birthDate, settings.birthTime);
     const moon = moonPhase(new Date());
     el.innerHTML = `
       <div class="card__title-row"><h2 class="card__title">Astrology</h2></div>
-      ${z ? `
-        <div class="astro-row">
+      <div class="astro-row astro-row--split">
+        ${z ? `
           <div class="astro-row__block">
             <div class="astro-row__label">Sun sign</div>
             <div class="astro-row__value">${z.sign}</div>
-            <div class="astro-row__trait">${escapeHtml(z.trait)}</div>
           </div>
-        </div>
-      ` : ''}
+        ` : ''}
+        ${moonSign ? `
+          <div class="astro-row__block">
+            <div class="astro-row__label">Moon sign</div>
+            <div class="astro-row__value">${moonSign}</div>
+          </div>
+        ` : ''}
+      </div>
+      ${z ? `<div class="astro-row__trait">${escapeHtml(z.trait)}</div>` : ''}
       <div class="astro-row">
         <div class="astro-row__block">
           <div class="astro-row__label">Moon today</div>
           <div class="astro-row__value">${moon.emoji} ${moon.name}</div>
         </div>
       </div>
+      <p class="settings-hint">Moon sign is approximate${settings.birthTime ? '' : ' -- add a birth time in Settings for an exact reading'}.</p>
       <div class="astro-horoscope astro-horoscope--disabled">
         <span>Daily horoscope</span>
         <small>Connect a source in a future update</small>
@@ -254,6 +343,56 @@ function renderAstroWidget(el, settings) {
     `;
   } catch (err) {
     console.warn('astrology widget failed', err);
+    el.hidden = true; el.innerHTML = '';
+  }
+}
+
+// v2.2 -- compact "Today's tasks" card, the one Home widget that's editable in place
+// (check off + quick-add). Deliberately its own light-weight renderer rather than
+// reusing components/tasklist.js's createTaskSection: no drag-reorder or goal-link
+// chip here (those stay on the Tasks tab) -- distinct `home-tasklist` classes so this
+// never collides with `.task-list`/`.task-row` styling or selectors used elsewhere.
+async function renderTasksWidget(el, date) {
+  async function draw() {
+    const tasks = await getTasksForDate(date);
+    el.innerHTML = `
+      <div class="card__title-row"><h2 class="card__title">Today's tasks</h2></div>
+      <ul class="home-tasklist" id="home-tasklist"></ul>
+      <p class="empty-hint" id="home-tasklist-empty" ${tasks.length ? 'hidden' : ''}>Nothing yet -- add one below.</p>
+      <div class="home-tasklist-add">
+        <input type="text" class="text-field" id="home-tasklist-input" placeholder="Add a to-do..." />
+        <button class="chip-btn" id="home-tasklist-add-btn">+ Add</button>
+      </div>
+    `;
+    const listEl = el.querySelector('#home-tasklist');
+    listEl.innerHTML = tasks.map((t) => `
+      <li class="home-tasklist__row ${t.done ? 'is-done' : ''}" data-id="${t.id}">
+        <button class="task-check" aria-label="Toggle done"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        <span class="home-tasklist__text">${escapeHtml(t.text)}</span>
+      </li>
+    `).join('');
+    listEl.querySelectorAll('.home-tasklist__row').forEach((row) => {
+      row.querySelector('.task-check').addEventListener('click', async () => {
+        row.classList.add('is-animating');
+        const done = await toggleTask(Number(row.dataset.id));
+        row.classList.toggle('is-done', done);
+        setTimeout(() => draw(), done ? 550 : 0);
+      });
+    });
+    const input = el.querySelector('#home-tasklist-input');
+    async function submitAdd() {
+      const text = input.value.trim();
+      if (!text) return;
+      await addTask(date, text);
+      draw();
+    }
+    el.querySelector('#home-tasklist-add-btn').addEventListener('click', submitAdd);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitAdd(); } });
+  }
+  try {
+    await draw();
+  } catch (err) {
+    console.warn('today\'s-tasks widget failed', err);
     el.hidden = true; el.innerHTML = '';
   }
 }
@@ -283,7 +422,7 @@ async function renderGlanceWidget(el, settings, date) {
       </div>
     `;
     el.querySelector('#glance-mood').addEventListener('click', () => { location.hash = '#/journal'; });
-    el.querySelector('#glance-task').addEventListener('click', () => { location.hash = '#/goals'; });
+    el.querySelector('#glance-task').addEventListener('click', () => { location.hash = '#/tasks'; });
     el.querySelector('#glance-streak').addEventListener('click', () => { location.hash = '#/review'; });
   } catch (err) {
     console.warn('at-a-glance widget failed', err);

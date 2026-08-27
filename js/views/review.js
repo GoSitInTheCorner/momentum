@@ -1,7 +1,7 @@
 // views/review.js — the analytics/time-machine tab: period toggle, rollups, charts, focus panel.
 import { getSettings, getGoals, getEmotionFrequency, getBeliefs } from '../store.js';
-import { periodRange, buildRollup, whereToFocus } from '../analytics.js';
-import { renderTrendChart, renderBarChart, destroyChart, destroyAllCharts } from '../components/chart.js';
+import { periodRange, buildRollup, whereToFocus, avg } from '../analytics.js';
+import { renderTrendChart, renderBarChart, renderRadarChart, destroyChart, destroyAllCharts } from '../components/chart.js';
 import { formatDate, escapeHtml } from '../util.js';
 import { todayStr } from '../db.js';
 
@@ -38,6 +38,12 @@ export async function renderReview(root) {
         <h2 class="card__title">Health trend</h2>
         <div class="chart-box"><canvas id="health-chart"></canvas></div>
         <p class="empty-hint" id="health-empty" hidden>No health ratings logged for this period yet.</p>
+      </section>
+
+      <section class="card">
+        <h2 class="card__title">Wheel of Life</h2>
+        <div class="chart-box"><canvas id="wheel-chart"></canvas></div>
+        <p class="empty-hint" id="wheel-empty" hidden>No ratings logged for this period yet.</p>
       </section>
 
       <section class="card">
@@ -93,6 +99,7 @@ export async function renderReview(root) {
     const rollup = await buildRollup(start, end, settings.healthDims);
     renderStats(view, rollup);
     renderHealthChart(view, rollup, settings);
+    renderWheelChart(view, rollup, settings);
     renderTasksChart(view, rollup);
     await renderFocus(view, rollup, settings);
     await renderEmotionFrequency(view, start, end);
@@ -122,6 +129,22 @@ function renderHealthChart(view, rollup, settings) {
   const labels = rollup.dates.map((d) => formatDate(d, settings.dateFormat));
   const series = enabled.map((d) => ({ label: d.label, data: rollup.health[d.key] }));
   renderTrendChart(canvas, { labels, series });
+}
+
+// Wheel of Life radar -- one axis per enabled life area, averaged over the period.
+// Areas with no data at all in this period (avg() === null) are dropped from the
+// wheel rather than plotted as a misleading 0 -- an unrated area isn't the same as a
+// bottomed-out rating.
+function renderWheelChart(view, rollup, settings) {
+  const canvas = view.querySelector('#wheel-chart');
+  const enabled = settings.healthDims.filter((d) => d.enabled);
+  const points = enabled
+    .map((d) => ({ label: d.label, mean: avg(rollup.health[d.key] || []) }))
+    .filter((p) => p.mean !== null);
+  view.querySelector('#wheel-empty').hidden = points.length > 0;
+  if (!points.length) { destroyChart(canvas); return; }
+  const max = settings.ratingScale === '5' || settings.ratingScale === 'emoji' ? 5 : 10;
+  renderRadarChart(canvas, { labels: points.map((p) => p.label), data: points.map((p) => p.mean), max });
 }
 
 function renderTasksChart(view, rollup) {

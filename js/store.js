@@ -21,10 +21,22 @@ export const DEFAULT_SETTINGS = {
   weekStart: 'sun',           // sun | mon
   dateFormat: 'MMM D',        // MMM D | D/M | M/D | YYYY-MM-DD
   timeFormat: '12',           // 12 | 24
+  // Burchard's 10 Life Areas (v2.1). Core 3 on by default; the other 7 are
+  // available but off until the user opts in (avoids daily-slider fatigue).
+  // `desc` lives here (not a second lookup table) so journal.js and
+  // settings.js can both read it straight off the dim, per DRY.
   healthDims: [
-    { key: 'mental', label: 'Mental', enabled: true },
-    { key: 'emotional', label: 'Emotional', enabled: true },
-    { key: 'physical', label: 'Physical', enabled: true },
+    { key: 'mental', label: 'Mental', enabled: true, desc: 'psychological well-being, mindfulness, emotional balance' },
+    { key: 'emotional', label: 'Emotional', enabled: true, desc: 'managing triggers and responses' },
+    { key: 'physical', label: 'Physical', enabled: true, desc: 'vitality, nutrition, sleep, fitness' },
+    { key: 'family', label: 'Family', enabled: false, desc: 'depth, quality, presence with immediate family' },
+    { key: 'friends', label: 'Friends', enabled: false, desc: 'social circle, support systems, community' },
+    { key: 'finances', label: 'Finances', enabled: false, desc: 'wealth building, saving, financial health' },
+    { key: 'mission', label: 'Mission', enabled: false, desc: 'work, career progress, your calling' },
+    { key: 'spirit', label: 'Spirit', enabled: false, desc: 'faith, the universe, inner peace' },
+    { key: 'adventure', label: 'Adventure', enabled: false, desc: 'fun, travel, exploration, new experiences' },
+    { key: 'learning', label: 'Learning', enabled: false, desc: 'new skills and knowledge' },
+    { key: 'growth', label: 'Growth', enabled: false, desc: 'self-improvement, discipline, personal development' },
   ],
   ratingScale: '10',          // 5 | 10 | emoji
   journalFont: 'serif',
@@ -35,11 +47,13 @@ export const DEFAULT_SETTINGS = {
   passcodeHash: null,
   autoLockMinutes: 5,
   birthDate: null,           // 'YYYY-MM-DD' or null
+  birthTime: null,           // 'HH:MM' (24h) or null -- optional, refines the moon sign
   weatherCity: '',           // fallback city name, '' = unset
   weatherUnits: 'F',         // 'C' | 'F'
   newsTopic: '',             // '' = no filter, else a Noozra category slug
+  recapCutoff: 12,           // show the morning "Yesterday" recap before this hour (0-24)
   homeWidgets: {              // per-widget on/off, all default true
-    weather: true, news: true, wordOfDay: true, astrology: true, calendar: true, atAGlance: true,
+    weather: true, news: true, wordOfDay: true, astrology: true, calendar: true, atAGlance: true, yesterdayRecap: true, todayTasks: true,
   },
 };
 
@@ -52,9 +66,21 @@ export async function getSettings() {
   // merge to backfill any new fields added since the record was created
   return {
     ...DEFAULT_SETTINGS, ...s,
-    healthDims: s.healthDims || DEFAULT_SETTINGS.healthDims,
+    healthDims: mergeHealthDims(s.healthDims),
     homeWidgets: { ...DEFAULT_SETTINGS.homeWidgets, ...(s.homeWidgets || {}) },
   };
+}
+
+// A stored settings doc's healthDims array is truthy once it has ever had 3 entries,
+// so `s.healthDims || DEFAULT` alone would never pick up new dims added to
+// DEFAULT_SETTINGS later (v2.1 added 7 more areas). Append any DEFAULT dim whose key
+// is missing from the stored array, preserving the user's existing enabled states and
+// any custom dims they added -- no clobbering, no data loss.
+function mergeHealthDims(stored) {
+  if (!stored || !stored.length) return DEFAULT_SETTINGS.healthDims;
+  const haveKeys = new Set(stored.map((d) => d.key));
+  const missing = DEFAULT_SETTINGS.healthDims.filter((d) => !haveKeys.has(d.key));
+  return [...stored, ...missing];
 }
 
 export async function saveSettings(patch) {

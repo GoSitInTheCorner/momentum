@@ -4,9 +4,9 @@
 const TABS = [
   { id: 'today', label: 'Today', icon: iconSun() },
   { id: 'journal', label: 'Journal', icon: iconBook() },
-  { id: 'review', label: 'Review', icon: iconChart() },
+  { id: 'tasks', label: 'Tasks', icon: iconCheck() },
   { id: 'goals', label: 'Goals', icon: iconTarget() },
-  { id: 'settings', label: 'Settings', icon: iconGear() },
+  { id: 'review', label: 'Review', icon: iconChart() },
 ];
 
 function iconSun() {
@@ -21,7 +21,10 @@ function iconChart() {
 function iconTarget() {
   return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="0.9" fill="currentColor"/></svg>`;
 }
-function iconGear() {
+function iconCheck() {
+  return `<svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="4" stroke="currentColor" stroke-width="1.8"/><path d="M8 12.5l2.6 2.6L16.5 9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
+export function iconGear() {
   return `<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M17.7 6.3l-1.5 1.5M7.8 16.2l-1.5 1.5M17.7 17.7l-1.5-1.5M7.8 7.8 6.3 6.3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
 }
 
