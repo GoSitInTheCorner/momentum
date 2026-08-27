@@ -4,6 +4,7 @@
 import { getSettings, saveSettings, exportBackup, importBackup, clearAllData, estimateStorageUsage } from '../store.js';
 import { hashPasscode } from '../lock.js';
 import { escapeHtml } from '../util.js';
+import { APP_VERSION } from '../version.js';
 
 const THEME_OPTIONS = [
   { id: 'light', label: 'Light' }, { id: 'dark', label: 'Dark' },
@@ -32,10 +33,22 @@ export async function renderSettings(root) {
       <section class="card"><h2 class="card__title">Journal</h2><div id="s-journal"></div></section>
       <section class="card"><h2 class="card__title">Privacy &amp; lock</h2><div id="s-lock"></div></section>
       <section class="card"><h2 class="card__title">Data</h2><div id="s-data"></div></section>
+      <p style="text-align:center;opacity:.55;font-size:.8rem;margin:18px 0 8px;">Momentum v${APP_VERSION}</p>
+      <button class="btn" id="s-force-refresh" style="opacity:.85">Force refresh (clear cache &amp; reload)</button>
       <div class="scroll-spacer"></div>
     </div>
   `;
   root.appendChild(view);
+
+  // Nuke all caches + service workers, then hard-reload -- the bulletproof "I still see
+  // the old version" escape hatch. (Normal updates apply automatically via app.js.)
+  view.querySelector('#s-force-refresh').addEventListener('click', async () => {
+    try {
+      if ('caches' in window) { const keys = await caches.keys(); await Promise.all(keys.map((k) => caches.delete(k))); }
+      if ('serviceWorker' in navigator) { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map((r) => r.unregister())); }
+    } catch (_) { /* ignore */ }
+    window.location.reload();
+  });
 
   let settings = await getSettings();
   async function update(patch) {

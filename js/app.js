@@ -161,7 +161,25 @@ function wireHeaderGear(incoming) {
 boot();
 
 if ('serviceWorker' in navigator) {
+  let updateReady = false;
+  // Reload only for a genuine update (a new SW replacing an old one) -- never on the
+  // first-visit clients.claim(), and guarded against a reload loop. sw.js calls
+  // skipWaiting(), so a new deploy activates and fires controllerchange on its own.
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (updateReady) { updateReady = false; window.location.reload(); }
+  });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('SW registration failed', err));
+    navigator.serviceWorker.register('./sw.js').then((reg) => {
+      reg.update().catch(() => {});
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) updateReady = true;
+        });
+      });
+      // Re-check for a new deploy every 5 min while the app stays open.
+      setInterval(() => reg.update().catch(() => {}), 5 * 60 * 1000);
+    }).catch((err) => console.warn('SW registration failed', err));
   });
 }
