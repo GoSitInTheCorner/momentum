@@ -74,6 +74,12 @@ a { color: inherit; }
 :root[data-density="compact"] { --pad-card: 14px; --gap: 10px; }
 :root:not([data-density="compact"]) { --pad-card: 20px; --gap: 14px; }
 
+/* Keep the Settings screen itself stable while you adjust size/spacing/density: the
+   preferences apply live to the CONTENT screens, but the control panel shouldn't reflow
+   under your finger as you tap. Font FAMILY still previews here (the visible change you
+   expect); only the layout-shifting metrics are pinned. */
+.view--settings { --font-scale: 1; --line-spacing: 1.6; --pad-card: 20px; --gap: 14px; }
+
 /* ---------- Base ---------- */
 html, body {
   width: 100%;
