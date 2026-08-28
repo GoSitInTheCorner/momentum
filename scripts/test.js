@@ -181,10 +181,10 @@ async function main() {
   // which is two sequential network round trips -- give it real headroom).
   await page.waitForFunction(() => {
     const el = document.querySelector('#w-weather');
-    return el.hidden || el.querySelector('.weather-widget');
+    return el.hidden || el.querySelector('.topbar-weather__temp');
   }, { timeout: 12000 }).catch(() => {});
   const weatherHidden = await page.locator('#w-weather').isHidden();
-  const weatherContent = await page.locator('#w-weather .weather-widget').count();
+  const weatherContent = await page.locator('#w-weather .topbar-weather__temp').count();
   check('weather widget resolves to content or hides gracefully (no stuck skeleton)', weatherHidden || weatherContent === 1);
 
   // News peek -- same graceful-degrade contract.
@@ -306,7 +306,7 @@ async function main() {
   await gotoTab('today');
   await page.waitForFunction(() => {
     const el = document.querySelector('#w-weather');
-    return el.hidden || el.querySelector('.weather-widget');
+    return el.hidden || el.querySelector('.topbar-weather__temp');
   }, { timeout: 12000 }).catch(() => {});
   await screenshot('home-light.png');
   await overflowOK('home-populated');
@@ -525,7 +525,7 @@ async function main() {
   await gotoTab('today');
   await page.waitForFunction(() => {
     const el = document.querySelector('#w-weather');
-    return el.hidden || el.querySelector('.weather-widget');
+    return el.hidden || el.querySelector('.topbar-weather__temp');
   }, { timeout: 12000 }).catch(() => {});
   await screenshot('home-dark.png');
   await overflowOK('home-dark');

@@ -80,8 +80,11 @@ export async function renderToday(root) {
   view.className = 'view view--today';
   view.innerHTML = `
     <header class="topbar">
-      <div class="topbar__eyebrow">${greeting()}</div>
-      <h1 class="topbar__title">${formatWeekday(date)}</h1>
+      <div class="topbar__row">
+        <div class="topbar__eyebrow">${greeting()}</div>
+        <div class="topbar__weather" id="w-weather" ${w.weather ? '' : 'hidden'}></div>
+      </div>
+      <h1 class="topbar__title">${formatHeaderDate(date)}</h1>
     </header>
     <div class="scroll-area">
       <section class="card home-widget home-widget--recap" id="w-recap" hidden></section>
@@ -98,7 +101,6 @@ export async function renderToday(root) {
         <button class="btn btn--home-cta" id="home-cta-btn">Write today's entry &rarr;</button>
       </section>
 
-      <section class="card home-widget home-widget--weather" id="w-weather" ${w.weather ? '' : 'hidden'}></section>
       <section class="card home-widget home-widget--news" id="w-news" ${w.news ? '' : 'hidden'}></section>
       <section class="card home-widget home-widget--word" id="w-word" ${w.wordOfDay ? '' : 'hidden'}></section>
       <section class="card home-widget home-widget--astro" id="w-astro" ${w.astrology ? '' : 'hidden'}></section>
@@ -135,6 +137,14 @@ function greeting() {
   if (h < 12) return 'Good morning';
   if (h < 18) return 'Good afternoon';
   return 'Good evening';
+}
+
+// Header title -- short form so it never wraps to two lines at the 30px display font,
+// e.g. "Friday, Aug 28". formatWeekday() (util.js) stays the full "Friday, August 28,
+// 2026" form used elsewhere (journal.js).
+function formatHeaderDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' });
 }
 
 // Morning "Yesterday" recap card -- the first thing you see, before the cutoff hour.
@@ -190,19 +200,15 @@ async function renderRecapWidget(el, settings, date) {
   }
 }
 
+// Header weather -- compact icon + temp only (no label/city/skeleton); the header row
+// has no room for more, and #w-weather now lives there instead of its own card.
 async function renderWeatherWidget(el, settings) {
-  el.innerHTML = `<div class="home-widget__skeleton"><div class="skel-line skel-line--w60"></div><div class="skel-line skel-line--w40"></div></div>`;
   try {
     const weather = await getWeather(settings);
     if (!weather) { el.hidden = true; el.innerHTML = ''; return; }
     el.innerHTML = `
-      <div class="weather-widget">
-        <span class="weather-widget__icon">${weather.icon}</span>
-        <div class="weather-widget__body">
-          <div class="weather-widget__temp">${weather.temp}&deg;${weather.unit}</div>
-          <div class="weather-widget__label">${escapeHtml(weather.label)}${weather.city ? ` &middot; ${escapeHtml(weather.city)}` : ''}</div>
-        </div>
-      </div>
+      <span class="topbar-weather__icon">${weather.icon}</span>
+      <span class="topbar-weather__temp">${weather.temp}&deg;${weather.unit}</span>
     `;
   } catch (err) {
     console.warn('weather widget failed', err);
