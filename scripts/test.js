@@ -610,6 +610,42 @@ async function main() {
   check('"Rate more life areas" toggle hides again once nothing remains to expand', expandHiddenAgainAfterRestore);
   await page.click('#checkin-toggle');
   await page.waitForTimeout(150);
+
+  // ---------- v2.3.1 fix: a disabled CORE area (mental/emotional/physical) must also
+  // land in the "Rate more life areas" expander, not vanish entirely. Row = every
+  // enabled dim (core-fixed-order first, then enabled extras); expander = every
+  // disabled dim, core or not -- the two sets are always disjoint. ----------
+  await openSettings();
+  const mentalToggle = page.locator('.dim-row', { hasText: 'Mental' }).locator('.dim-toggle');
+  await mentalToggle.evaluate((el) => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(150);
+  await gotoTab('journal');
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
+  const mentalGoneFromRowCount = await page.locator('#health-row .hslider__track[aria-label="Mental"]').count();
+  check('turning off a CORE area (Mental) in Settings removes it from the always-visible row', mentalGoneFromRowCount === 0, `count=${mentalGoneFromRowCount}`);
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(200);
+  const mentalInExpandCount = await page.locator('#health-row-expand .hslider__track[aria-label="Mental"]').count();
+  check('turning off a CORE area (Mental) still leaves it reachable in the expand-group (not vanished)', mentalInExpandCount === 1, `count=${mentalInExpandCount}`);
+  const rowExpandOverlap = await page.evaluate(() => {
+    const rowKeys = Array.from(document.querySelectorAll('#health-row .hslider__track')).map((t) => t.getAttribute('aria-label'));
+    const expandKeys = Array.from(document.querySelectorAll('#health-row-expand .hslider__track')).map((t) => t.getAttribute('aria-label'));
+    return rowKeys.filter((k) => expandKeys.includes(k));
+  });
+  check('always-visible row and expander never share a dim (disjoint enabled/disabled sets)', rowExpandOverlap.length === 0, JSON.stringify(rowExpandOverlap));
+  await page.click('#life-areas-toggle');
+  await page.waitForTimeout(150);
+  await openSettings();
+  await mentalToggle.evaluate((el) => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(150);
+  await gotoTab('journal');
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
+  const mentalBackCount = await page.locator('#health-row .hslider__track[aria-label="Mental"]').count();
+  check('turning Mental back on in Settings restores it to the always-visible row', mentalBackCount === 1, `count=${mentalBackCount}`);
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(150);
   await openSettings();
 
   // ---------- AMOLED theme check (not a required screenshot, just a functional check) ----------

@@ -264,10 +264,11 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
   const enabledExtras = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && d.enabled);
   for (const dim of enabledExtras) healthRow.appendChild(makeHealthSlider(dim).el);
 
-  // Every remaining (not yet enabled) non-core area is still always reachable -- never
-  // hidden behind Settings -- via a collapsed, lazy-mounted "Rate more life areas"
-  // group. They don't exist in the DOM at all until first expanded.
-  const otherDims = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && !d.enabled);
+  // Every remaining disabled area -- core or non-core -- is still always reachable --
+  // never hidden behind Settings -- via a collapsed, lazy-mounted "Rate more life
+  // areas" group. They don't exist in the DOM at all until first expanded. Row = all
+  // enabled dims, expander = all disabled dims -- always disjoint, never both/neither.
+  const otherDims = settings.healthDims.filter((d) => !d.enabled);
   const expandToggle = pane.querySelector('#life-areas-toggle');
   const expandToggleLabel = pane.querySelector('#life-areas-toggle-label');
   const expandRow = pane.querySelector('#health-row-expand');
