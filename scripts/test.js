@@ -359,14 +359,19 @@ async function main() {
   await gotoTab('journal');
   await overflowOK('journal-hub');
 
-  const checkinHiddenInitially = await page.locator('#checkin-body[hidden]').count();
-  check('Journal "Daily check-in" is collapsed by default', checkinHiddenInitially === 1);
+  const checkinVisibleInitially = await page.locator('#checkin-body:not([hidden])').count();
+  check('Journal "Daily check-in" is open by default', checkinVisibleInitially === 1);
   await screenshot('journal-declutter.png');
 
   await page.click('#checkin-toggle');
   await page.waitForTimeout(200);
+  const checkinHiddenAfterTap = await page.locator('#checkin-body[hidden]').count();
+  check('Daily check-in collapses on tap', checkinHiddenAfterTap === 1);
+
+  await page.click('#checkin-toggle');
+  await page.waitForTimeout(200);
   const checkinVisible = await page.locator('#checkin-body:not([hidden])').count();
-  check('Daily check-in expands on tap', checkinVisible === 1);
+  check('Daily check-in re-expands on tap', checkinVisible === 1);
 
   // Health sliders -- click near top of each track for a high value. Verify the shared
   // autosave badge also flashes on a slider change. All 8 non-core areas were already
@@ -550,10 +555,8 @@ async function main() {
   await gotoTab('goals'); await screenshot('goals-dark.png'); await overflowOK('goals-dark');
   await gotoTab('review'); await screenshot('review-dark.png'); await overflowOK('review-dark');
 
-  // Emotion word bank screenshot in dark theme (re-open from Journal check-in).
+  // Emotion word bank screenshot in dark theme (check-in is open by default).
   await gotoTab('journal');
-  await page.click('#checkin-toggle');
-  await page.waitForTimeout(150);
   await page.click('.emo-row__add');
   await page.waitForSelector('.sheet--wordbank', { timeout: 3000 });
   await screenshot('emotion-wordbank-dark.png');
@@ -586,8 +589,6 @@ async function main() {
   await financeToggle.evaluate((el) => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('journal');
-  await page.click('#checkin-toggle');
-  await page.waitForTimeout(150);
   const financeGoneFromRowCount = await page.locator('#health-row .hslider__track[aria-label="Finances"]').count();
   check('turning off Finances in Settings removes it from the always-visible row', financeGoneFromRowCount === 0, `count=${financeGoneFromRowCount}`);
   const expandLabelWithFinance = await page.locator('#life-areas-toggle-label').innerText();
@@ -602,8 +603,6 @@ async function main() {
   await financeToggle.evaluate((el) => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('journal');
-  await page.click('#checkin-toggle');
-  await page.waitForTimeout(150);
   const financeBackCount = await page.locator('#health-row .hslider__track[aria-label="Finances"]').count();
   check('turning Finances back on in Settings restores it to the always-visible row', financeBackCount === 1, `count=${financeBackCount}`);
   const expandHiddenAgainAfterRestore = await page.locator('#life-areas-toggle').isHidden();
@@ -620,8 +619,6 @@ async function main() {
   await mentalToggle.evaluate((el) => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('journal');
-  await page.click('#checkin-toggle');
-  await page.waitForTimeout(150);
   const mentalGoneFromRowCount = await page.locator('#health-row .hslider__track[aria-label="Mental"]').count();
   check('turning off a CORE area (Mental) in Settings removes it from the always-visible row', mentalGoneFromRowCount === 0, `count=${mentalGoneFromRowCount}`);
   await page.click('#life-areas-toggle');
@@ -640,8 +637,6 @@ async function main() {
   await mentalToggle.evaluate((el) => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('journal');
-  await page.click('#checkin-toggle');
-  await page.waitForTimeout(150);
   const mentalBackCount = await page.locator('#health-row .hslider__track[aria-label="Mental"]').count();
   check('turning Mental back on in Settings restores it to the always-visible row', mentalBackCount === 1, `count=${mentalBackCount}`);
   await page.click('#checkin-toggle');
@@ -716,8 +711,6 @@ async function main() {
   await gotoTab('journal');
   const persistedPreview = await page.locator('.journal-today-card__preview').innerText();
   check('journal text persisted after reload (Journal hub preview)', persistedPreview.includes('solid, productive day'), persistedPreview.slice(0, 90));
-  await page.click('#checkin-toggle');
-  await page.waitForTimeout(150);
   const persistedTagCount = await page.locator('.emo-pill').count();
   check('emotion tags persisted after reload', persistedTagCount >= 1, `count=${persistedTagCount}`);
 

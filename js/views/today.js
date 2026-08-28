@@ -168,7 +168,7 @@ async function renderRecapWidget(el, settings, date) {
       el.hidden = true; return;
     }
     const mood = moodFor(day || {}, settings.ratingScale);
-    const stat = (t) => `<span style="opacity:.72">${t}</span>`;
+    const stat = (t) => `<span style="opacity:.85">${t}</span>`;
     el.hidden = false;
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">

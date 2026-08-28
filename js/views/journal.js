@@ -187,11 +187,11 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
       </section>
 
       <section class="card">
-        <button type="button" class="checkin-toggle" id="checkin-toggle" aria-expanded="false">
+        <button type="button" class="checkin-toggle is-open" id="checkin-toggle" aria-expanded="true">
           <span>Daily check-in</span>
           <span class="checkin-toggle__chevron" aria-hidden="true">&#9662;</span>
         </button>
-        <div class="checkin-body" id="checkin-body" hidden>
+        <div class="checkin-body" id="checkin-body">
           <div class="card__title-row"><h2 class="card__title">How are you?</h2></div>
           <div class="health-row" id="health-row"></div>
           <button type="button" class="life-areas-toggle" id="life-areas-toggle" hidden>
