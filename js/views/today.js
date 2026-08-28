@@ -85,15 +85,6 @@ export async function renderToday(root) {
     </header>
     <div class="scroll-area">
       <section class="card home-widget home-widget--recap" id="w-recap" hidden></section>
-      <section class="card home-widget home-widget--weather" id="w-weather" ${w.weather ? '' : 'hidden'}></section>
-      <section class="card home-widget home-widget--news" id="w-news" ${w.news ? '' : 'hidden'}></section>
-      <section class="card home-widget home-widget--word" id="w-word" ${w.wordOfDay ? '' : 'hidden'}></section>
-      <section class="card home-widget home-widget--astro" id="w-astro" ${w.astrology ? '' : 'hidden'}></section>
-
-      <section class="card home-cta-card">
-        <p class="home-cta__prompt" id="home-prompt">${escapeHtml(promptsForToday()[0])}</p>
-        <button class="btn btn--home-cta" id="home-cta-btn">Write today's entry &rarr;</button>
-      </section>
 
       <section class="card home-widget home-widget--tasks" id="w-tasks" ${w.todayTasks ? '' : 'hidden'}></section>
 
@@ -101,6 +92,16 @@ export async function renderToday(root) {
         <div class="card__title-row"><h2 class="card__title">Your month</h2></div>
         <div id="home-cal-mount"></div>
       </section>
+
+      <section class="card home-cta-card">
+        <p class="home-cta__prompt" id="home-prompt">${escapeHtml(promptsForToday()[0])}</p>
+        <button class="btn btn--home-cta" id="home-cta-btn">Write today's entry &rarr;</button>
+      </section>
+
+      <section class="card home-widget home-widget--weather" id="w-weather" ${w.weather ? '' : 'hidden'}></section>
+      <section class="card home-widget home-widget--news" id="w-news" ${w.news ? '' : 'hidden'}></section>
+      <section class="card home-widget home-widget--word" id="w-word" ${w.wordOfDay ? '' : 'hidden'}></section>
+      <section class="card home-widget home-widget--astro" id="w-astro" ${w.astrology ? '' : 'hidden'}></section>
 
       <section class="card home-widget home-widget--glance" id="w-glance" ${w.atAGlance ? '' : 'hidden'}></section>
       <div class="scroll-spacer"></div>
@@ -229,7 +230,7 @@ async function renderNewsWidget(el, settings) {
   }
 }
 
-// v2.2 -- "Words to sit with": 6 words as 3 opposing antonym pairs, no definitions.
+// v2.2 -- "Words to sit with": 1-3 opposing contrast pairs, no definitions.
 // Each word is tappable -> fills + runs the existing dictionary look-up below (so
 // curiosity about a word leads straight to its actual meaning instead of a bundled
 // one). See data/wordpairs.json + services/wordpairs.js for the offline pair picker.
@@ -303,11 +304,9 @@ async function renderWordWidget(el, date) {
 function renderAstroWidget(el, settings) {
   try {
     if (!settings.birthDate) {
-      el.innerHTML = `
-        <div class="card__title-row"><h2 class="card__title">Astrology</h2></div>
-        <p class="empty-hint">Set your birth date in Settings to see your sign.</p>
-      `;
-      return;
+      // No birthday set yet -- hide the whole card instead of a placeholder; it only
+      // appears once the user has entered one in Settings.
+      el.hidden = true; el.innerHTML = ''; return;
     }
     const z = sunSignFor(settings.birthDate);
     const moonSign = moonSignFor(settings.birthDate, settings.birthTime);

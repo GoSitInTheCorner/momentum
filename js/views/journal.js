@@ -259,16 +259,21 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
     const dim = byKey.get(key);
     if (dim && dim.enabled) healthRow.appendChild(makeHealthSlider(dim).el);
   }
+  // Any non-core area the user has explicitly enabled in Settings joins the
+  // always-visible row too (in stored order) -- enabling an area promotes it here.
+  const enabledExtras = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && d.enabled);
+  for (const dim of enabledExtras) healthRow.appendChild(makeHealthSlider(dim).el);
 
-  // The other Burchard areas (+ any user-added custom dims) live in a collapsed,
-  // lazy-mounted "Rate more life areas" group -- they don't exist in the DOM at all
-  // until first expanded, so the always-visible core-3 count stays exactly 3.
-  const otherDims = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && d.enabled);
+  // Every remaining (not yet enabled) non-core area is still always reachable -- never
+  // hidden behind Settings -- via a collapsed, lazy-mounted "Rate more life areas"
+  // group. They don't exist in the DOM at all until first expanded.
+  const otherDims = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && !d.enabled);
   const expandToggle = pane.querySelector('#life-areas-toggle');
   const expandToggleLabel = pane.querySelector('#life-areas-toggle-label');
   const expandRow = pane.querySelector('#health-row-expand');
   if (otherDims.length) {
     expandToggle.hidden = false;
+    expandToggleLabel.textContent = `Rate more life areas (${otherDims.length})`;
     let mounted = false;
     expandToggle.addEventListener('click', () => {
       const opening = expandRow.hidden;
@@ -278,7 +283,7 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
       }
       expandRow.hidden = !opening;
       expandToggle.classList.toggle('is-open', opening);
-      expandToggleLabel.textContent = opening ? 'Show fewer life areas' : 'Rate more life areas';
+      expandToggleLabel.textContent = opening ? 'Show fewer life areas' : `Rate more life areas (${otherDims.length})`;
     });
   }
 

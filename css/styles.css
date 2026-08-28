@@ -436,6 +436,10 @@ body::before {
   background: var(--bg-2); border: 1px solid var(--hairline); border-radius: 999px;
   font-size: calc(13px * var(--font-scale)); font-weight: 600; color: var(--ink-2);
 }
+/* Author `display: flex` above ties the UA [hidden]{display:none} rule on specificity
+   -- without this, setting the `hidden` attribute alone would NOT actually hide the
+   button (v2.3: it's hidden whenever there's nothing left to expand). */
+.life-areas-toggle[hidden] { display: none; }
 .life-areas-toggle__chevron { transition: transform 0.2s ease; display: inline-block; }
 .life-areas-toggle.is-open .life-areas-toggle__chevron { transform: rotate(180deg); }
 .health-row--expand {

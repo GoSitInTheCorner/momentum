@@ -23,6 +23,20 @@ const ZODIAC_SIGNS = [
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
 ];
 
+// v2.3 -- "Words to sit with" shows 1-3 pairs (2-6 words), deterministic by date --
+// mirrors services/wordpairs.js's pairsForDate() count formula so the assertion is
+// correct no matter what day this suite runs on. today.js calls pairsForDate() with a
+// local-MIDNIGHT Date reconstructed from todayStr() (y/m/d, no time-of-day), and
+// dayOfYear()'s naive local-midnight subtraction loses an hour across the DST
+// spring-forward boundary -- so this must reconstruct that same midnight Date rather
+// than use the live current-time Date, or it'll disagree with the app by one day.
+function expectedWordPairWordCount(date = new Date()) {
+  const midnight = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const start = new Date(midnight.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((midnight - start) / 86400000);
+  return (1 + (dayOfYear % 3)) * 2;
+}
+
 const results = [];
 function check(name, pass, detail = '') {
   results.push({ name, pass, detail });
@@ -178,10 +192,11 @@ async function main() {
   const newsContent = await page.locator('#w-news .news-widget__list').count();
   check('news widget resolves to content or hides gracefully', newsHidden || newsContent === 1);
 
-  // v2.2 -- "Words to sit with": 6 words as 3 antonym pairs, no inline definitions,
-  // each word tappable -> runs the existing dictionary look-up.
+  // v2.3 -- "Words to sit with": 1-3 opposing contrast pairs (2-6 words, varies by
+  // date), no inline definitions, each word tappable -> runs the dictionary look-up.
   const wordPairEls = await page.locator('#w-word .wordpairs__word').count();
-  check('home word widget shows exactly 6 words (3 opposing pairs)', wordPairEls === 6, `count=${wordPairEls}`);
+  const expectedWordPairEls = expectedWordPairWordCount();
+  check('home word widget shows the expected word count for today (1-3 opposing pairs)', wordPairEls === expectedWordPairEls, `count=${wordPairEls} expected=${expectedWordPairEls}`);
   const wordPairDefs = await page.locator('#w-word .wordpairs .word-widget__def').count();
   check('word pairs show no inline definitions', wordPairDefs === 0, `count=${wordPairDefs}`);
   await page.click('#w-word .wordpairs__word >> nth=0');
@@ -354,29 +369,32 @@ async function main() {
   check('Daily check-in expands on tap', checkinVisible === 1);
 
   // Health sliders -- click near top of each track for a high value. Verify the shared
-  // autosave badge also flashes on a slider change.
-  const sliders = await page.locator('#checkin-body .hslider__track').all();
+  // autosave badge also flashes on a slider change. All 8 non-core areas were already
+  // enabled in Settings above, so (v2.3) they're already in the always-visible row here
+  // too -- 11 tracks total, not just the core 3.
+  const sliders = await page.locator('#health-row .hslider__track').all();
   for (const slider of sliders) {
     const box = await slider.boundingBox();
     await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.2);
     await page.waitForTimeout(150);
   }
-  const sliderValues = await page.locator('#checkin-body .hslider__value').allTextContents();
-  check('all 3 core health sliders set', sliderValues.length === 3 && sliderValues.every((v) => v.trim().length > 0), JSON.stringify(sliderValues));
+  const sliderValues = await page.locator('#health-row .hslider__value').allTextContents();
+  check('all 11 always-visible health sliders set (core 3 + every enabled life area)', sliderValues.length === 11 && sliderValues.every((v) => v.trim().length > 0), JSON.stringify(sliderValues));
   const hintAfterSlider = await page.locator('#journal-hint').innerText();
   check('"Saved" indicator also flashes on a slider change', /Saved/.test(hintAfterSlider), hintAfterSlider);
 
-  // v2.1 -- Burchard's 10 Life Areas: core 3 collapsed by default, other 8 lazy-mounted
-  // behind "Rate more life areas" (11 total once expanded).
-  const preExpandTracks = await page.locator('#checkin-body .hslider__track').count();
-  check('only the core 3 sliders exist before expanding life areas', preExpandTracks === 3, `count=${preExpandTracks}`);
-  await page.click('#life-areas-toggle');
-  await page.waitForTimeout(200);
-  const expandedTracks = await page.locator('#checkin-body .hslider__track').count();
-  check('expanding "Rate more life areas" mounts all 11 sliders', expandedTracks === 11, `count=${expandedTracks}`);
+  // v2.3 -- all 10+ life areas are always findable to rate: an enabled non-core area
+  // joins the core 3 in the always-visible row (never stuck behind an unreached
+  // expander), and only areas still NOT enabled sit behind "Rate more life areas".
+  // The Settings step above turned on all 8 extras, so all 11 should show immediately
+  // and the expander should have nothing left to show.
+  const allEnabledTracks = await page.locator('#health-row .hslider__track').count();
+  check('all 11 sliders show immediately once every life area is enabled in Settings', allEnabledTracks === 11, `count=${allEnabledTracks}`);
+  const expandHiddenWhenNothingLeft = await page.locator('#life-areas-toggle').isHidden();
+  check('"Rate more life areas" toggle hides once nothing remains to expand', expandHiddenWhenNothingLeft);
 
-  // Set two of the newly-revealed areas via slider interaction; confirm the shared
-  // autosave badge fires for them too, same as the core-3 check above.
+  // Set two of the areas via slider interaction; confirm the shared autosave badge
+  // fires for them too, same as the core-3 check above.
   const financeSlider = page.locator('.hslider__track[aria-label="Finances"]');
   const spiritSlider = page.locator('.hslider__track[aria-label="Spirit"]');
   // Also fill a few more of the 8 (visual richness for the screenshot only, no
@@ -391,15 +409,12 @@ async function main() {
     await page.waitForTimeout(150);
   }
   const hintAfterExpandedSlider = await page.locator('#journal-hint').innerText();
-  check('"Saved" indicator also flashes on an expanded life-area slider change', /Saved/.test(hintAfterExpandedSlider), hintAfterExpandedSlider);
+  check('"Saved" indicator also flashes on a life-area slider change', /Saved/.test(hintAfterExpandedSlider), hintAfterExpandedSlider);
   const financeValueText = (await financeSlider.locator('.hslider__value').innerText()).trim();
   const spiritValueText = (await spiritSlider.locator('.hslider__value').innerText()).trim();
   check('Finances and Spirit sliders show a set value', financeValueText.length > 0 && spiritValueText.length > 0, `${financeValueText} / ${spiritValueText}`);
   await screenshot('journal-lifeareas.png');
   await overflowOK('journal-lifeareas-expanded');
-  // Collapse again so later screenshots reflect the correct collapsed-by-default state.
-  await page.click('#life-areas-toggle');
-  await page.waitForTimeout(150);
 
   await page.click('#add-done-btn');
   await page.fill('.sheet--prompt .sheet__input', 'Shipped the onboarding flow redesign');
@@ -564,18 +579,23 @@ async function main() {
   });
   await page.waitForTimeout(150);
 
-  // ---------- Health-dim toggle: verify toggling Finances in Settings adds/removes it
-  // from the Journal check-in's expand-group (mirrors the Home-widget-toggle check above). ----------
+  // ---------- Health-dim toggle: verify toggling Finances off in Settings demotes it
+  // from the always-visible row into the "Rate more life areas" expander (never fully
+  // hidden -- still reachable), and toggling it back on promotes it back. ----------
   const financeToggle = page.locator('.dim-row', { hasText: 'Finances' }).locator('.dim-toggle');
   await financeToggle.evaluate((el) => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('journal');
   await page.click('#checkin-toggle');
   await page.waitForTimeout(150);
+  const financeGoneFromRowCount = await page.locator('#health-row .hslider__track[aria-label="Finances"]').count();
+  check('turning off Finances in Settings removes it from the always-visible row', financeGoneFromRowCount === 0, `count=${financeGoneFromRowCount}`);
+  const expandLabelWithFinance = await page.locator('#life-areas-toggle-label').innerText();
+  check('"Rate more life areas" toggle reappears with a count of 1 once an area is turned off', /Rate more life areas \(1\)/.test(expandLabelWithFinance), expandLabelWithFinance);
   await page.click('#life-areas-toggle');
   await page.waitForTimeout(200);
-  const financeGoneCount = await page.locator('.hslider__track[aria-label="Finances"]').count();
-  check('turning off Finances in Settings removes it from the check-in expand-group', financeGoneCount === 0, `count=${financeGoneCount}`);
+  const financeInExpandCount = await page.locator('#health-row-expand .hslider__track[aria-label="Finances"]').count();
+  check('turning off Finances in Settings still leaves it reachable in the expand-group', financeInExpandCount === 1, `count=${financeInExpandCount}`);
   await page.click('#life-areas-toggle');
   await page.waitForTimeout(150);
   await openSettings();
@@ -584,12 +604,10 @@ async function main() {
   await gotoTab('journal');
   await page.click('#checkin-toggle');
   await page.waitForTimeout(150);
-  await page.click('#life-areas-toggle');
-  await page.waitForTimeout(200);
-  const financeBackCount = await page.locator('.hslider__track[aria-label="Finances"]').count();
-  check('turning Finances back on in Settings restores it to the check-in expand-group', financeBackCount === 1, `count=${financeBackCount}`);
-  await page.click('#life-areas-toggle');
-  await page.waitForTimeout(150);
+  const financeBackCount = await page.locator('#health-row .hslider__track[aria-label="Finances"]').count();
+  check('turning Finances back on in Settings restores it to the always-visible row', financeBackCount === 1, `count=${financeBackCount}`);
+  const expandHiddenAgainAfterRestore = await page.locator('#life-areas-toggle').isHidden();
+  check('"Rate more life areas" toggle hides again once nothing remains to expand', expandHiddenAgainAfterRestore);
   await page.click('#checkin-toggle');
   await page.waitForTimeout(150);
   await openSettings();
@@ -667,16 +685,13 @@ async function main() {
   const persistedTagCount = await page.locator('.emo-pill').count();
   check('emotion tags persisted after reload', persistedTagCount >= 1, `count=${persistedTagCount}`);
 
-  // v2.1 -- expanded life-area ratings (Finances, Spirit) persisted across reload.
-  // Expand-group is lazy-mounted, so re-expand it before reading values back.
-  await page.click('#life-areas-toggle');
-  await page.waitForTimeout(200);
-  const financeValueAfterReload = (await page.locator('.hslider__track[aria-label="Finances"] .hslider__value').innerText()).trim();
-  const spiritValueAfterReload = (await page.locator('.hslider__track[aria-label="Spirit"] .hslider__value').innerText()).trim();
+  // v2.3 -- life-area ratings (Finances, Spirit) persisted across reload. Both dims are
+  // enabled in Settings (restored above), so they're in the always-visible row now, not
+  // behind the expander.
+  const financeValueAfterReload = (await page.locator('#health-row .hslider__track[aria-label="Finances"] .hslider__value').innerText()).trim();
+  const spiritValueAfterReload = (await page.locator('#health-row .hslider__track[aria-label="Spirit"] .hslider__value').innerText()).trim();
   check('Finances rating persisted after reload', financeValueAfterReload === financeValueText, `before=${financeValueText} after=${financeValueAfterReload}`);
   check('Spirit rating persisted after reload', spiritValueAfterReload === spiritValueText, `before=${spiritValueText} after=${spiritValueAfterReload}`);
-  await page.click('#life-areas-toggle');
-  await page.waitForTimeout(150);
   await page.click('#checkin-toggle');
   await page.waitForTimeout(150);
 
@@ -742,9 +757,10 @@ async function main() {
   const offlineTabbar = await page.locator('.tabbar').count();
   check('app renders while offline (service worker cache hit)', offlineTabbar === 1, `tabbar count=${offlineTabbar}`);
   await gotoTab('today');
-  await page.waitForFunction(() => document.querySelectorAll('#w-word .wordpairs__word').length === 6, { timeout: 5000 }).catch(() => {});
+  const expectedOfflineWordPairs = expectedWordPairWordCount();
+  await page.waitForFunction((n) => document.querySelectorAll('#w-word .wordpairs__word').length === n, expectedOfflineWordPairs, { timeout: 5000 }).catch(() => {});
   const offlineWordPairs = await page.locator('#w-word .wordpairs__word').count();
-  check('"Words to sit with" still renders fully offline', offlineWordPairs === 6, `count=${offlineWordPairs}`);
+  check('"Words to sit with" still renders fully offline', offlineWordPairs === expectedOfflineWordPairs, `count=${offlineWordPairs} expected=${expectedOfflineWordPairs}`);
   await page.waitForFunction(() => document.querySelector('#w-weather').hidden, { timeout: 9000 }).catch(() => {});
   const offlineWeatherHidden = await page.locator('#w-weather').isHidden();
   check('weather widget degrades gracefully offline (hidden, no crash)', offlineWeatherHidden);
