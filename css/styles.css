@@ -362,7 +362,8 @@ body::before {
   transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 .task-check svg { width: 15px; height: 15px; }
-.task-row.is-done .task-check {
+.task-row.is-done .task-check,
+.home-tasklist__row.is-done .task-check {
   background: var(--accent); border-color: var(--accent); color: #fffaf2;
   animation: check-pop 0.4s ease;
 }
