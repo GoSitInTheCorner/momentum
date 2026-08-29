@@ -131,7 +131,11 @@ export async function toggleTask(id) {
   const task = await db.tasks.get(id);
   if (!task) return;
   const done = !task.done;
-  await db.tasks.update(id, { done, doneAt: done ? Date.now() : null });
+  const now = Date.now();
+  // completedAt (distinct from the older doneAt) is what the Tasks tab's "Done &
+  // thoughts" history sorts by -- stamped/cleared in lockstep with `done` so an
+  // undo-then-redo always resorts to the newest completion time, not a stale one.
+  await db.tasks.update(id, { done, doneAt: done ? now : null, completedAt: done ? now : null });
   emit('tasks-changed', { date: task.date });
   return done;
 }
@@ -163,6 +167,36 @@ export async function getTasksForGoal(goalId) {
 
 export async function getAllTasksInRange(startDate, endDate) {
   return db.tasks.where('date').between(startDate, endDate, true, true).toArray();
+}
+
+// Every open (incomplete) task across every date -- the Tasks tab's persistent "To do"
+// list (v2.5, replaces the old today-only view + manual "carried over from yesterday"
+// strip). Oldest date first so aged tasks surface at the top instead of getting buried.
+export async function getOpenTasks() {
+  const all = await db.tasks.toArray();
+  return all
+    .filter((t) => !t.done)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.order ?? 0) - (b.order ?? 0) || a.id - b.id));
+}
+
+// Completed tasks, newest-first by completion time -- half of the Tasks tab's "Done &
+// thoughts" history (see getThoughts() for the other half).
+export async function getDoneTasks(limit = 60) {
+  const all = await db.tasks.toArray();
+  const done = all.filter((t) => t.done);
+  done.sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0) || (b.date > a.date ? 1 : b.date < a.date ? -1 : 0) || b.id - a.id);
+  return done.slice(0, limit);
+}
+
+// "Did it" quick-add: a task logged already complete. Mirrors addTask's field shape
+// exactly, just born done.
+export async function addDoneTask(date, text) {
+  const existing = await getTasksForDate(date);
+  const order = existing.length ? Math.max(...existing.map((t) => t.order ?? 0)) + 1 : 0;
+  const now = Date.now();
+  const id = await db.tasks.add({ date, text, done: true, doneAt: now, completedAt: now, goalId: null, order });
+  emit('tasks-changed', { date });
+  return id;
 }
 
 // ---------- Home calendar / streak helpers ----------
@@ -220,6 +254,22 @@ export async function deleteLogItem(id) {
 
 export async function getLogInRange(startDate, endDate) {
   return db.logItems.where('date').between(startDate, endDate, true, true).toArray();
+}
+
+// ---------- Thoughts (a third logItems type, alongside 'done'/'learned') ----------
+// A random note captured from the Tasks tab's quick-add row. Reuses the logItems store
+// (already indexed by type) rather than a new table -- additive only, the journal
+// recap's 'done'/'learned' filters are untouched by a third type existing alongside them.
+export async function addThought(date, text) {
+  const id = await db.logItems.add({ date, type: 'thought', text, createdAt: Date.now() });
+  emit('log-changed', { date });
+  return id;
+}
+
+export async function getThoughts(limit = 60) {
+  const all = await db.logItems.where('type').equals('thought').toArray();
+  all.sort((a, b) => b.createdAt - a.createdAt);
+  return all.slice(0, limit);
 }
 
 // ---------- Goals ----------

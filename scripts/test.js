@@ -18,6 +18,18 @@ const ALLOWED_EXTERNAL_HOSTS = new Set([
   'api.open-meteo.com', 'geocoding-api.open-meteo.com', 'noozra.com', 'api.dictionaryapi.dev',
 ]);
 
+// Tasks-tab persistence check (v2.5): a task dated N days in the past must still show
+// up in the "To do" list (it's a persistent all-dates list now, no more today-only +
+// manual carryover).
+function dateNDaysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${da}`;
+}
+
 const ZODIAC_SIGNS = [
   'Aries', 'Taurus', 'Gemini', 'Cancer', 'Leo', 'Virgo',
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
@@ -311,29 +323,68 @@ async function main() {
   await screenshot('home-light.png');
   await overflowOK('home-populated');
 
-  // ---------- 2. Tasks tab: today's to-dos (own tab as of v2.2) ----------
+  // ---------- 2. Tasks tab (v2.5 rework): one capture box (+Task / Did it / Thought),
+  // a persistent "To do" list of every OPEN task across all dates (no more today-only
+  // list + manual carryover strip), and a collapsible dated "Done & thoughts" history. ----------
+  // Seed a task dated 3 days ago directly in the DB (nothing in the UI can backdate a
+  // task) so the persistence assertion below has a genuinely past-dated open task to find.
+  const pastTaskDate = dateNDaysAgo(3);
+  await page.evaluate(async (d) => {
+    const db = window.__momentumDb;
+    await db.tasks.add({ date: d, text: 'Renew the annual A/V subscription', done: false, doneAt: null, goalId: null, order: 0 });
+  }, pastTaskDate);
+
   await gotoTab('tasks');
-  await page.click('#add-task-btn');
-  await page.fill('.sheet--prompt .sheet__input', 'Finish project proposal');
-  await page.click('.sheet--prompt .sheet__submit');
+
+  await page.fill('#capture-input', 'Finish project proposal');
+  await page.click('#capture-task-btn');
   await page.waitForTimeout(200);
 
-  await page.click('#add-task-btn');
-  await page.fill('.sheet--prompt .sheet__input', 'Water the office plants');
-  await page.click('.sheet--prompt .sheet__submit');
+  await page.fill('#capture-input', 'Shipped the onboarding flow redesign');
+  await page.click('#capture-did-btn');
   await page.waitForTimeout(200);
 
-  // 3 total: the Home quick-add task (already checked off above) + these 2 new ones.
-  let taskCount = await page.locator('.task-row').count();
-  check('three to-dos exist on the Tasks tab (1 from Home + 2 added here)', taskCount === 3, `count=${taskCount}`);
+  await page.fill('#capture-input', 'Maybe simplify the settings page next');
+  await page.click('#capture-thought-btn');
+  await page.waitForTimeout(200);
 
-  // nth=0 is the Home-added task (order 0, already done); check off the next one.
-  await page.click('.task-row >> nth=1 >> .task-check');
+  const captureCleared = await page.inputValue('#capture-input');
+  check('capture input clears after each quick-add', captureCleared === '', JSON.stringify(captureCleared));
+
+  // To do: the past-dated task (oldest-date-first) + the new open task = 2 rows, each
+  // with a date chip; the past one shows a real date, the new one shows "Today".
+  let openRows = await page.locator('#open-task-list .task-row').count();
+  check('open task created for a PAST date persists in the "To do" list alongside today\'s', openRows === 2, `count=${openRows}`);
+  const firstRowDate = await page.locator('#open-task-list .task-row').first().locator('.task-date').innerText();
+  check('the past-dated open task shows its actual date (not "Today")', firstRowDate.trim() !== 'Today', firstRowDate);
+  const secondRowDate = await page.locator('#open-task-list .task-row').nth(1).locator('.task-date').innerText();
+  check('today\'s open task shows a "Today" date chip', secondRowDate.trim() === 'Today', secondRowDate);
+
+  // Done & thoughts: collapsed by default, count = 1 done task from Home (checked off
+  // earlier) + the new "Did it" task + the new thought = 3.
+  const historyHiddenInitially = await page.locator('#history-body[hidden]').count();
+  check('"Done & thoughts" is collapsed by default', historyHiddenInitially === 1);
+  const historyCountBefore = await page.locator('#history-count').innerText();
+  check('"Done & thoughts" count reflects done tasks + thoughts', historyCountBefore.trim() === '3', historyCountBefore);
+
+  await page.click('#history-toggle');
+  await page.waitForTimeout(200);
+  const historyRows = await page.locator('#history-list .log-row').count();
+  check('expanding "Done & thoughts" shows every done task + thought', historyRows === 3, `count=${historyRows}`);
+  const doneGlyphRows = await page.locator('#history-list .log-row--task-done').count();
+  check('done tasks in history show the check glyph + strike-through styling hook', doneGlyphRows === 2, `count=${doneGlyphRows}`);
+  const thoughtGlyphRows = await page.locator('#history-list .log-row--thought').count();
+  check('the thought shows in history with its own glyph styling hook', thoughtGlyphRows === 1, `count=${thoughtGlyphRows}`);
+
+  // Checking a To-do task off moves it out of "To do" and into the history (animated).
+  await page.click('#open-task-list .task-row >> nth=1 >> .task-check');
   await page.waitForTimeout(700);
-  const doneCount = await page.locator('.task-row.is-done').count();
-  check('a to-do checked off on the Tasks tab (animated)', doneCount === 2, `is-done count=${doneCount}`);
+  openRows = await page.locator('#open-task-list .task-row').count();
+  check('checking a task off the To-do list removes it from To-do (animated)', openRows === 1, `count=${openRows}`);
+  const historyCountAfterCheck = await page.locator('#history-count').innerText();
+  check('checking a task off moves it into "Done & thoughts" (count increments)', historyCountAfterCheck.trim() === '4', historyCountAfterCheck);
   const taskSavedFlash = await page.locator('#task-hint').innerText();
-  check('"Saved" indicator flashes after a to-do change', /Saved/.test(taskSavedFlash) || true); // best-effort -- badge may already have faded
+  check('"Saved" indicator flashes after a task change', /Saved/.test(taskSavedFlash) || true); // best-effort -- badge may already have faded
   await screenshot('tasks-light.png');
   await overflowOK('tasks');
 
@@ -702,8 +753,12 @@ async function main() {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForSelector('.tabbar', { timeout: 5000 });
   await gotoTab('tasks');
-  const persistedTasks = await page.locator('.task-row').count();
-  check('to-dos persisted after reload (Tasks tab)', persistedTasks === 3, `count=${persistedTasks}`);
+  const persistedOpenTasks = await page.locator('#open-task-list .task-row').count();
+  check('open tasks persisted after reload (Tasks tab "To do")', persistedOpenTasks === 1, `count=${persistedOpenTasks}`);
+  const persistedPastDate = await page.locator('#open-task-list .task-row .task-date').first().innerText();
+  check('the past-dated open task is still in "To do" after reload (persistence, no carryover step needed)', persistedPastDate.trim() !== 'Today', persistedPastDate);
+  const persistedHistoryCount = await page.locator('#history-count').innerText();
+  check('"Done & thoughts" count persisted after reload', persistedHistoryCount.trim() === '4', persistedHistoryCount);
   await gotoTab('goals');
   const persistedGoals = await page.locator('.goal-card').count();
   check('goal persisted after reload', persistedGoals === 1, `count=${persistedGoals}`);

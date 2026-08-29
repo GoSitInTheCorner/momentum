@@ -341,7 +341,20 @@ body::before {
 .journal-input:focus { outline: none; }
 .autosave-hint { font-size: calc(11px * var(--font-scale)); color: var(--ink-2); text-align: right; height: 14px; }
 
-/* ---------- To-dos ---------- */
+/* ---------- Tasks (capture card + persistent To-do + Done/thoughts history) ---------- */
+.task-capture__actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.task-capture__actions .chip-btn { flex: 1 1 auto; text-align: center; }
+.task-date {
+  flex: 0 0 auto; font-size: calc(11px * var(--font-scale)); color: var(--ink-2); background: var(--bg-2);
+  padding: 4px 9px; border-radius: 999px; white-space: nowrap;
+}
+/* Reuses .log-row (see "Done/learned log" below) for the merged Done & thoughts history
+   -- a completed task strikes through and picks up the same accomplishment green as
+   journal's .log-row--done; a thought stays un-struck in a muted tone. */
+.log-row--task-done .log-row__dot { color: #4a7a63; }
+.log-row--task-done .log-row__text { text-decoration: line-through; text-decoration-color: var(--accent); color: var(--ink-2); }
+.log-row--thought .log-row__dot { color: var(--ink-2); }
+
 .task-list { display: flex; flex-direction: column; gap: 8px; }
 .task-row {
   display: flex; align-items: center; gap: 10px;
@@ -349,17 +362,7 @@ body::before {
   border-bottom: 1px solid var(--hairline);
   transition: opacity 0.35s ease;
 }
-.task-row.is-dragging { opacity: 0.4; }
 .task-row:last-child { border-bottom: none; }
-.task-drag {
-  flex: 0 0 auto;
-  width: 20px; height: 44px;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--ink-2);
-  touch-action: none;
-  cursor: grab;
-}
-.task-drag svg { width: 15px; height: 15px; }
 .task-check {
   flex: 0 0 auto;
   width: 26px; height: 26px; border-radius: 50%;
@@ -381,19 +384,7 @@ body::before {
 }
 .task-row__text { flex: 1 1 auto; font-size: calc(15px * var(--font-scale)); min-width: 0; overflow-wrap: anywhere; }
 .task-row.is-done .task-row__text { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--accent); }
-.task-link {
-  flex: 0 0 auto; font-size: calc(11px * var(--font-scale)); color: var(--ink-2); background: var(--bg-2);
-  padding: 4px 8px; border-radius: 999px; max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.task-link.has-goal { color: var(--accent); background: var(--accent-soft); }
 .task-delete { flex: 0 0 auto; width: 28px; height: 28px; font-size: calc(18px * var(--font-scale)); color: var(--ink-2); }
-
-.carryover { background: var(--bg-2); border-radius: calc(var(--radius) * 0.6); padding: 10px 12px; margin-bottom: 10px; }
-.carryover__label { font-size: calc(11px * var(--font-scale)); text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-2); margin-bottom: 6px; }
-.carryover__row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.carryover__text { flex: 1 1 auto; font-size: calc(14px * var(--font-scale)); min-width: 0; overflow-wrap: anywhere; }
-.carryover__add { font-size: calc(12px * var(--font-scale)); font-weight: 700; color: var(--accent); padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); }
-.carryover__dismiss { font-size: calc(16px * var(--font-scale)); color: var(--ink-2); width: 24px; }
 
 /* ---------- Done/learned log ---------- */
 .log-actions { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
@@ -679,11 +670,11 @@ body::before {
    glyph -- an invisible, centered ::after overlay extends the actual hit area while
    the button itself keeps its original visual size. ---------- */
 .task-check, .task-delete, .log-row__delete, .milestone-check, .milestone-delete,
-.carryover__dismiss, .icon-btn, .sheet__close, .chip-btn {
+.icon-btn, .sheet__close, .chip-btn {
   position: relative;
 }
 .task-check::after, .task-delete::after, .log-row__delete::after, .milestone-check::after, .milestone-delete::after,
-.carryover__dismiss::after, .icon-btn::after, .sheet__close::after, .chip-btn::after {
+.icon-btn::after, .sheet__close::after, .chip-btn::after {
   content: "";
   position: absolute;
   top: 50%; left: 50%;

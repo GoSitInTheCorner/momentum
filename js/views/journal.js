@@ -292,8 +292,11 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
   mountEmotionTagRow(pane.querySelector('#emo-tag-mount'), { date, tags: day.emotions || [] });
 
   // ---- Done / learned log ----
+  // getLogForDate() returns every logItems type for the date, including the Tasks
+  // tab's 'thought' entries (v2.5) -- filter down to this section's own two types so a
+  // thought doesn't leak into the "I did.../I learned..." list it's not part of.
   async function refreshLog() {
-    const items = await getLogForDate(date);
+    const items = (await getLogForDate(date)).filter((i) => i.type === 'done' || i.type === 'learned');
     const listEl = pane.querySelector('#log-list');
     listEl.innerHTML = items.map((i) => `
       <li class="log-row log-row--${i.type}" data-id="${i.id}">
@@ -362,7 +365,10 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
 // Exported so Home's calendar (and anywhere else) can open the same day-detail sheet
 // instead of duplicating this markup.
 export async function openDayDetail(date, settings) {
-  const [tasks, log, day] = await Promise.all([getTasksForDate(date), getLogForDate(date), getDay(date)]);
+  const [tasks, rawLog, day] = await Promise.all([getTasksForDate(date), getLogForDate(date), getDay(date)]);
+  // Same 'thought' leak as refreshLog() above -- this section is captioned "Done &
+  // learned", so keep it to those two types only.
+  const log = rawLog.filter((i) => i.type === 'done' || i.type === 'learned');
 
   openFormSheet({
     title: formatWeekday(date),

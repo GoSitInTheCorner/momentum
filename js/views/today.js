@@ -386,9 +386,9 @@ async function renderTasksWidget(el, date) {
     el.innerHTML = `
       <div class="card__title-row"><h2 class="card__title">Today's tasks</h2></div>
       <ul class="home-tasklist" id="home-tasklist"></ul>
-      <p class="empty-hint" id="home-tasklist-empty" ${tasks.length ? 'hidden' : ''}>Nothing yet -- add one below.</p>
+      <p class="empty-hint" id="home-tasklist-empty" ${tasks.length ? 'hidden' : ''}>Nothing yet — add a task below.</p>
       <div class="home-tasklist-add">
-        <input type="text" class="text-field" id="home-tasklist-input" placeholder="Add a to-do..." />
+        <input type="text" class="text-field" id="home-tasklist-input" placeholder="Add a task..." />
         <button class="chip-btn" id="home-tasklist-add-btn">+ Add</button>
       </div>
     `;

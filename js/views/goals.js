@@ -1,5 +1,6 @@
-// views/goals.js -- goals/milestones only (to-dos moved to views/tasks.js in v2.2 --
-// task<->goal linking still works via tasklist.js's goal-link sheet).
+// views/goals.js -- goals/milestones only (tasks moved to views/tasks.js in v2.2; the
+// Tasks tab dropped its goal-link chip in v2.5, but a task's goalId field still exists
+// for goalProgress() below to count against).
 import {
   getGoals, getGoal, addGoal, updateGoal, deleteGoal, goalProgress, getMostUsedGoalCategory,
 } from '../store.js';

@@ -33,18 +33,18 @@ PASS -- astrology shows a Moon sign (v2.2) :: Pisces
 PASS -- astrology shows the disabled horoscope slot
 PASS -- weather widget resolves to content or hides gracefully (no stuck skeleton)
 PASS -- news widget resolves to content or hides gracefully
-PASS -- home word widget shows exactly 6 words (3 opposing pairs) :: count=6
+PASS -- home word widget shows the expected word count for today (1-3 opposing pairs) :: count=2 expected=2
 PASS -- word pairs show no inline definitions :: count=0
 PASS -- tapping a word pair fills + runs the dictionary look-up :: Look-up failed -- try again.
 PASS -- manual word look-up produces a result or a clean not-found/failed state (no crash) :: Look-up failed -- try again.
 PASS -- tapping a calendar day opens that day's detail sheet
-PASS -- day-detail sheet shows the full written date :: Thursday, August 27, 2026
+PASS -- day-detail sheet shows the full written date :: Saturday, August 29, 2026
 PASS -- at-a-glance strip shows 3 tiles :: count=3
 PASS -- tapping the streak tile routes to Review
 PASS -- CTA opens the full-screen writing view :: #/journal?write=1
-PASS -- writing view shows the full written date header :: Thursday, August 27, 2026
+PASS -- writing view shows the full written date header :: Saturday, August 29, 2026
 PASS -- writing view entry field starts EMPTY (no prompt text prefilled) :: ""
-PASS -- empty entry field offers the daily prompt as a PLACEHOLDER, not real content :: What is one thing you want to remember about today?
+PASS -- empty entry field offers the daily prompt as a PLACEHOLDER, not real content :: What is on your mind?
 PASS -- tab bar is hidden in the writing view
 PASS -- FAB is hidden in the writing view
 PASS -- writing view shows nothing but the date + textarea (no sliders/tags/log) :: count=0
@@ -57,21 +57,31 @@ PASS -- tab bar reappears after leaving the writing view
 PASS -- Journal hub "Today" card previews the saved entry :: Reflecting on a solid, productive day. Feeling steady and focused.Grateful
 PASS -- re-entering the writing view shows the persisted text (not empty, not a prompt) :: Reflecting on a solid, productive day. Feeling steady and fo
 PASS -- no horizontal overflow (home-populated) :: scrollWidth=402
-PASS -- three to-dos exist on the Tasks tab (1 from Home + 2 added here) :: count=3
-PASS -- a to-do checked off on the Tasks tab (animated) :: is-done count=2
-PASS -- "Saved" indicator flashes after a to-do change
+PASS -- capture input clears after each quick-add :: ""
+PASS -- open task created for a PAST date persists in the "To do" list alongside today's :: count=2
+PASS -- the past-dated open task shows its actual date (not "Today") :: Aug 26
+PASS -- today's open task shows a "Today" date chip :: Today
+PASS -- "Done & thoughts" is collapsed by default
+PASS -- "Done & thoughts" count reflects done tasks + thoughts :: 3
+PASS -- expanding "Done & thoughts" shows every done task + thought :: count=3
+PASS -- done tasks in history show the check glyph + strike-through styling hook :: count=2
+PASS -- the thought shows in history with its own glyph styling hook :: count=1
+PASS -- checking a task off the To-do list removes it from To-do (animated) :: count=1
+PASS -- checking a task off moves it into "Done & thoughts" (count increments) :: 4
+PASS -- "Saved" indicator flashes after a task change
 PASS -- no horizontal overflow (tasks) :: scrollWidth=402
 PASS -- Goals no longer shows the to-do list :: count=0
 PASS -- goal with milestone created :: count=1
 PASS -- no horizontal overflow (goals) :: scrollWidth=402
 PASS -- no horizontal overflow (journal-hub) :: scrollWidth=402
-PASS -- Journal "Daily check-in" is collapsed by default
-PASS -- Daily check-in expands on tap
-PASS -- all 3 core health sliders set :: ["8","8","8"]
+PASS -- Journal "Daily check-in" is open by default
+PASS -- Daily check-in collapses on tap
+PASS -- Daily check-in re-expands on tap
+PASS -- all 11 always-visible health sliders set (core 3 + every enabled life area) :: ["8","8","8","8","8","8","6","6","6","6","6"]
 PASS -- "Saved" indicator also flashes on a slider change :: Saved ✓
-PASS -- only the core 3 sliders exist before expanding life areas :: count=3
-PASS -- expanding "Rate more life areas" mounts all 11 sliders :: count=11
-PASS -- "Saved" indicator also flashes on an expanded life-area slider change :: Saved ✓
+PASS -- all 11 sliders show immediately once every life area is enabled in Settings :: count=11
+PASS -- "Rate more life areas" toggle hides once nothing remains to expand
+PASS -- "Saved" indicator also flashes on a life-area slider change :: Saved ✓
 PASS -- Finances and Spirit sliders show a set value :: 9 / 9
 PASS -- no horizontal overflow (journal-lifeareas-expanded) :: scrollWidth=402
 PASS -- done + learned log items added :: count=2
@@ -93,13 +103,22 @@ PASS -- no horizontal overflow (tasks-dark) :: scrollWidth=402
 PASS -- no horizontal overflow (goals-dark) :: scrollWidth=402
 PASS -- no horizontal overflow (review-dark) :: scrollWidth=402
 PASS -- turning off a Home widget toggle hides that widget
-PASS -- turning off Finances in Settings removes it from the check-in expand-group :: count=0
-PASS -- turning Finances back on in Settings restores it to the check-in expand-group :: count=1
+PASS -- turning off Finances in Settings removes it from the always-visible row :: count=0
+PASS -- "Rate more life areas" toggle reappears with a count of 1 once an area is turned off :: Rate more life areas (1)
+PASS -- turning off Finances in Settings still leaves it reachable in the expand-group :: count=1
+PASS -- turning Finances back on in Settings restores it to the always-visible row :: count=1
+PASS -- "Rate more life areas" toggle hides again once nothing remains to expand
+PASS -- turning off a CORE area (Mental) in Settings removes it from the always-visible row :: count=0
+PASS -- turning off a CORE area (Mental) still leaves it reachable in the expand-group (not vanished) :: count=1
+PASS -- always-visible row and expander never share a dim (disjoint enabled/disabled sets) :: []
+PASS -- turning Mental back on in Settings restores it to the always-visible row :: count=1
 PASS -- AMOLED theme applies true-black background :: #000000
 PASS -- passcode lock engages on reload when enabled :: overlay count=1
 PASS -- correct passcode unlocks the app
-PASS -- export backup produced a downloadable file :: C:\Users\User\AppData\Local\Temp\playwright-artifacts-glBJaZ\b3c2dfdc-3bd5-4497-9fc9-dfa85523663f
-PASS -- to-dos persisted after reload (Tasks tab) :: count=3
+PASS -- export backup produced a downloadable file :: C:\Users\User\AppData\Local\Temp\playwright-artifacts-DIcfiU\e646bc42-e6bd-4365-8bc2-a5be801ce322
+PASS -- open tasks persisted after reload (Tasks tab "To do") :: count=1
+PASS -- the past-dated open task is still in "To do" after reload (persistence, no carryover step needed) :: Aug 26
+PASS -- "Done & thoughts" count persisted after reload :: 4
 PASS -- goal persisted after reload :: count=1
 PASS -- journal text persisted after reload (Journal hub preview) :: Reflecting on a solid, productive day. Feeling steady and focused.Grateful
 PASS -- emotion tags persisted after reload :: count=1
@@ -115,14 +134,27 @@ Pisces
 curious and quick-witted, energized b
 PASS -- Review handles an empty custom range without crashing (incl. Wheel of Life empty-state) :: consoleErrors=0 wheelEmptyHidden=false
 PASS -- yesterday recap card shows on Home :: count=1
-PASS -- recap surfaces yesterday activity :: YESTERDAY · WEDNESDAY, AUGUST 26, 2026 × ✓ 1 task done 1 accomplished 1 learned Shipped th
+PASS -- recap surfaces yesterday activity :: YESTERDAY · FRIDAY, AUGUST 28, 2026 × ✓ 1 task done 1 accomplished 1 learned Shipped the r
 PASS -- recap dismiss hides the card :: count=0
 PASS -- app renders while offline (service worker cache hit) :: tabbar count=1
-PASS -- "Words to sit with" still renders fully offline :: count=6
+PASS -- "Words to sit with" still renders fully offline :: count=2 expected=2
 PASS -- weather widget degrades gracefully offline (hidden, no crash)
 PASS -- offline navigation works (Journal tab reachable)
+PASS -- Today shows the "Take your Life Assessment" card before any assessment exists :: count=1
+PASS -- Review shows the empty Life Assessment prompt before any assessment exists :: count=1
+PASS -- Review's take-assessment button routes to the Life Assessment view :: #/assessment
+PASS -- tab bar is hidden on the immersive Life Assessment view
+PASS -- FAB is hidden on the immersive Life Assessment view
+PASS -- Life Assessment renders all 11 life areas :: count=11
+PASS -- progress hint updates as areas are scored :: 2 of 11 scored
+PASS -- no horizontal overflow (assessment-form) :: scrollWidth=402
+PASS -- Save routes back to Review :: #/review
+PASS -- an assessments row was written on save :: count=1
+PASS -- Today's take-assessment card disappears after the first assessment :: count=0
+PASS -- Review renders the Life Assessment radar canvas after taking one :: count=1
+PASS -- no horizontal overflow (review-assessment) :: scrollWidth=402
 PASS -- zero console errors across full run
 PASS -- every external request targets the allowlisted keyless APIs
 
 === SUMMARY ===
-98/98 checks passed
+130/130 checks passed
