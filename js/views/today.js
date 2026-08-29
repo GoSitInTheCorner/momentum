@@ -5,6 +5,7 @@
 import { todayStr, addDays } from '../db.js';
 import {
   getSettings, getTasksForDate, getActivityStreak, getDay, getLogForDate, addTask, toggleTask,
+  getAssessmentCount,
 } from '../store.js';
 import { createHomeCalendar } from '../components/homecalendar.js';
 import { getWeather } from '../services/weather.js';
@@ -96,6 +97,8 @@ export async function renderToday(root) {
         <div id="home-cal-mount"></div>
       </section>
 
+      <section class="card home-widget home-widget--assessment" id="w-assessment" hidden></section>
+
       <section class="card home-cta-card">
         <p class="home-cta__prompt" id="home-prompt">${escapeHtml(promptsForToday()[0])}</p>
         <button class="btn btn--home-cta" id="home-cta-btn">Write today's entry &rarr;</button>
@@ -130,6 +133,26 @@ export async function renderToday(root) {
   if (w.todayTasks) renderTasksWidget(view.querySelector('#w-tasks'), date);
   if (w.atAGlance) renderGlanceWidget(view.querySelector('#w-glance'), settings, date);
   if (w.yesterdayRecap !== false) renderRecapWidget(view.querySelector('#w-recap'), settings, date);
+  renderAssessmentWidget(view.querySelector('#w-assessment'));
+}
+
+// Life Assessment first-run prompt (v2.4) -- prominent until the first snapshot is
+// taken, then hidden for good (Review's "Retake assessment" takes over from there).
+async function renderAssessmentWidget(el) {
+  try {
+    const count = await getAssessmentCount();
+    if (count > 0) { el.hidden = true; el.innerHTML = ''; return; }
+    el.hidden = false;
+    el.innerHTML = `
+      <h2 class="card__title">Take your Life Assessment</h2>
+      <p class="assessment-widget__line">Score where you are across the 10 life areas.</p>
+      <button class="btn btn--home-cta" id="assessment-widget-btn">Take the assessment &rarr;</button>
+    `;
+    el.querySelector('#assessment-widget-btn').addEventListener('click', () => { location.hash = '#/assessment'; });
+  } catch (err) {
+    console.warn('assessment widget failed', err);
+    el.hidden = true; el.innerHTML = '';
+  }
 }
 
 function greeting() {

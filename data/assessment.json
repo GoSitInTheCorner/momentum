@@ -1,0 +1,13 @@
+[
+  {"key":"mental","questions":["When your mind is loudest, what is it usually saying?","What have you been avoiding thinking about?","What clears your head faster than anything else?"]},
+  {"key":"emotional","questions":["What set you off most recently, and what was underneath it?","Which feeling do you hide the best?","When did you last feel genuinely at peace?"]},
+  {"key":"physical","questions":["Does your body feel like an ally or an obstacle right now?","What would actually taking care of yourself look like this week?","Where do you carry your stress physically?"]},
+  {"key":"family","questions":["Who in your family needs more of you than they're getting?","What pattern from how you were raised are you repeating or breaking?","When did you last feel truly present with them?"]},
+  {"key":"friends","questions":["Who could you call at 2am — and when did you last call them for no reason?","Are your friendships feeding you or draining you?","Who have you let drift that you shouldn't have?"]},
+  {"key":"finances","questions":["Does money feel like a tool or a threat right now?","What are you spending on that you'd be embarrassed to defend?","What would enough actually look like for you?"]},
+  {"key":"mission","questions":["If money weren't a factor, would you still do what you do?","Are you building something, or just staying busy?","What work makes you lose track of time?"]},
+  {"key":"spirit","questions":["What do you believe in that you can't prove?","When do you feel part of something bigger than yourself?","What would give your ordinary days more meaning?"]},
+  {"key":"adventure","questions":["When did you last do something for the first time?","What are you curious about but keep putting off?","Where has routine become a rut instead of a rhythm?"]},
+  {"key":"learning","questions":["What are you noticeably better at than a year ago?","What do you keep meaning to learn but never start?","When did you last change your mind about something that mattered?"]},
+  {"key":"growth","questions":["What one habit would change everything if it stuck?","Who are you becoming — and is it on purpose?","What are you tolerating that you shouldn't?"]}
+]

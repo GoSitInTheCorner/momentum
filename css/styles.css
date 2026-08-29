@@ -876,3 +876,37 @@ a.news-widget__item:active { opacity: 0.7; }
 }
 .journal-write__textarea:focus { outline: none; border-color: var(--accent); }
 .journal-write__hint { text-align: center; padding-top: 10px; flex: 0 0 auto; }
+
+/* ==========================================================================
+   Life Assessment (v2.4) -- guided reflection form (immersive, journal-write__header
+   reused for the back arrow) + Today/Review entry cards + Wheel-of-Life-style radar.
+   ========================================================================== */
+.view--assessment { display: flex; flex-direction: column; min-height: 100dvh; }
+.assessment-intro-block {
+  padding: 4px calc(20px + var(--safe-right)) 10px calc(20px + var(--safe-left));
+  flex: 0 0 auto;
+}
+.assessment-title { font-family: var(--font-display); font-size: calc(24px * var(--font-scale)); font-weight: 700; }
+.assessment-intro { font-size: calc(14px * var(--font-scale)); color: var(--ink-2); margin-top: 4px; }
+.assessment-progress { font-size: calc(12px * var(--font-scale)); color: var(--accent); font-weight: 600; margin-top: 6px; }
+.assessment-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 calc(16px + var(--safe-right)) 12px calc(16px + var(--safe-left));
+}
+.assessment-area__desc { font-size: calc(13px * var(--font-scale)); color: var(--ink-2); margin-top: 2px; }
+.assessment-q { margin-top: 14px; }
+.assessment-q .field-label { margin: 0 0 6px; }
+.assessment-slider-mount { display: flex; justify-content: center; margin-top: 18px; }
+.assessment-save-bar {
+  flex: 0 0 auto;
+  padding: 12px calc(20px + var(--safe-right)) calc(12px + var(--safe-bottom)) calc(20px + var(--safe-left));
+  border-top: 1px solid var(--hairline);
+  background: var(--bg);
+}
+.assessment-save-bar .btn { margin-top: 0; }
+
+/* Today first-run card + Review's snapshot/prompt card. */
+.home-widget--assessment .assessment-widget__line { font-size: calc(13px * var(--font-scale)); color: var(--ink-2); margin: 4px 0; }
+.assessment-card__date { font-size: calc(12px * var(--font-scale)); color: var(--ink-2); margin-bottom: 10px; }

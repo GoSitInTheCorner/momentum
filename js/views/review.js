@@ -1,7 +1,11 @@
 // views/review.js — the analytics/time-machine tab: period toggle, rollups, charts, focus panel.
-import { getSettings, getGoals, getEmotionFrequency, getBeliefs } from '../store.js';
+import {
+  getSettings, getGoals, getEmotionFrequency, getBeliefs,
+  getLatestAssessment, getAssessments, getAssessmentCount,
+} from '../store.js';
 import { periodRange, buildRollup, whereToFocus, avg } from '../analytics.js';
 import { renderTrendChart, renderBarChart, renderRadarChart, destroyChart, destroyAllCharts } from '../components/chart.js';
+import { loadAssessmentQuestions } from '../services/assessment.js';
 import { formatDate, escapeHtml } from '../util.js';
 import { todayStr } from '../db.js';
 
@@ -45,6 +49,8 @@ export async function renderReview(root) {
         <div class="chart-box"><canvas id="wheel-chart"></canvas></div>
         <p class="empty-hint" id="wheel-empty" hidden>No ratings logged for this period yet.</p>
       </section>
+
+      <section class="card assessment-card" id="assessment-card"></section>
 
       <section class="card">
         <h2 class="card__title">Tasks completed / day</h2>
@@ -93,6 +99,10 @@ export async function renderReview(root) {
   });
   view.querySelector('#custom-start').addEventListener('change', (e) => { custom.start = e.target.value; if (period === 'custom') load(); });
   view.querySelector('#custom-end').addEventListener('change', (e) => { custom.end = e.target.value; if (period === 'custom') load(); });
+
+  // Life Assessment section is a standalone snapshot (not period-scoped), so it's
+  // rendered once here rather than inside load()/setActivePeriod().
+  await renderAssessmentSection(view, settings);
 
   async function load() {
     const { start, end } = periodRange(period, todayStr(), custom);
@@ -169,6 +179,57 @@ async function renderBeliefsChanged(view, start, end) {
   view.querySelector('#beliefs-changed-list').innerHTML = changed.map((b) => `
     <li class="focus-item"><span class="focus-item__icon">&#9670;</span><span>"${escapeHtml(b.topic)}" -- your view shifted during this period.</span></li>
   `).join('');
+}
+
+// Life Assessment section (v2.4) -- empty prompt until the first snapshot is taken,
+// then a Wheel-of-Life-style radar of the latest scores (overlaying the previous
+// snapshot once >=2 exist). Not period-scoped, unlike the rest of Review. The radar's
+// canvas is torn down along with every other chart on this view by the
+// destroyAllCharts() call at the top of renderReview -- no separate cleanup needed
+// (MOM-004 leak fix already covers every canvas this view creates).
+async function renderAssessmentSection(view, settings) {
+  const card = view.querySelector('#assessment-card');
+  try {
+    const count = await getAssessmentCount();
+    if (!count) {
+      card.innerHTML = `
+        <h2 class="card__title">Life Assessment</h2>
+        <p class="empty-hint">A deeper look across your life -- a guided reflection on where you stand in each area.</p>
+        <button class="btn btn--primary" id="assessment-take-btn">Take your Life Assessment</button>
+      `;
+      card.querySelector('#assessment-take-btn').addEventListener('click', () => { location.hash = '#/assessment'; });
+      return;
+    }
+
+    const [latest, assessments, areas] = await Promise.all([
+      getLatestAssessment(), getAssessments(), loadAssessmentQuestions(),
+    ]);
+    const dimByKey = new Map(settings.healthDims.map((d) => [d.key, d]));
+    const scoredKeys = areas.map((a) => a.key).filter((k) => typeof latest.scores?.[k] === 'number');
+    const labels = scoredKeys.map((k) => dimByKey.get(k)?.label || k);
+    const nowData = scoredKeys.map((k) => latest.scores[k]);
+    const previous = assessments[1]; // assessments sorted newest-first
+
+    card.innerHTML = `
+      <div class="card__title-row"><h2 class="card__title">Life Assessment</h2></div>
+      <p class="assessment-card__date">Last taken ${escapeHtml(formatDate(latest.date, settings.dateFormat))}</p>
+      <div class="chart-box"><canvas id="assessment-radar-chart"></canvas></div>
+      <button class="btn btn--secondary" id="assessment-retake-btn">Retake assessment</button>
+    `;
+    if (scoredKeys.length) {
+      const canvas = card.querySelector('#assessment-radar-chart');
+      if (previous) {
+        const prevData = scoredKeys.map((k) => (typeof previous.scores?.[k] === 'number' ? previous.scores[k] : null));
+        renderRadarChart(canvas, { labels, series: [{ label: 'Now', data: nowData }, { label: 'Last time', data: prevData }], max: 10 });
+      } else {
+        renderRadarChart(canvas, { labels, data: nowData, max: 10 });
+      }
+    }
+    card.querySelector('#assessment-retake-btn').addEventListener('click', () => { location.hash = '#/assessment'; });
+  } catch (err) {
+    console.warn('assessment section failed', err);
+    card.innerHTML = '';
+  }
 }
 
 async function renderFocus(view, rollup, settings) {

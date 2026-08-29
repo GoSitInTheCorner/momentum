@@ -370,6 +370,27 @@ export async function addEmotionTag(date, word) {
   return [...tags];
 }
 
+// ---------- Life Assessment (dated snapshots: per-area score + reflections) ----------
+export async function saveAssessment({ date, scores, reflections }) {
+  const id = await db.assessments.add({ date, scores, reflections, createdAt: Date.now() });
+  emit('assessment-changed');
+  return id;
+}
+
+export async function getAssessments() {
+  const all = await db.assessments.toArray();
+  return all.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+export async function getLatestAssessment() {
+  const all = await getAssessments();
+  return all[0] || null;
+}
+
+export async function getAssessmentCount() {
+  return db.assessments.count();
+}
+
 // ---------- Data export / import / clear ----------
 export async function exportBackup() {
   const [days, tasks, logItems, goals, beliefs, settings] = await Promise.all([

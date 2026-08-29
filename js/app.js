@@ -10,6 +10,7 @@ import { renderReview } from './views/review.js';
 import { renderGoals } from './views/goals.js';
 import { renderTasks } from './views/tasks.js';
 import { renderSettings } from './views/settings.js';
+import { renderAssessment } from './views/assessment.js';
 
 const RENDERERS = {
   today: renderToday,
@@ -18,6 +19,7 @@ const RENDERERS = {
   goals: renderGoals,
   tasks: renderTasks,
   settings: renderSettings,
+  assessment: renderAssessment,
 };
 // v2.2 -- Settings moved off the tab bar to a gear button (see wireHeaderGear below),
 // so it's no longer in this set: FAB stays on Home, Journal, and Tasks -- Home has zero
@@ -115,6 +117,10 @@ async function route() {
   // scoped to a past day via &date=YYYY-MM-DD). It replaces the whole hub UI, so the
   // tab bar + FAB are hidden for it below (immersive, one-thing-at-a-time).
   const isJournalWrite = resolvedTab === 'journal' && !!params.write;
+  // The Life Assessment view is also immersive (own header/back-arrow, no tab bar/FAB,
+  // full-bleed layout) but is reached only via buttons (Today/Review), never the tab
+  // bar -- see isJournalWrite's opts below, which stay journal-specific.
+  const isImmersive = isJournalWrite || resolvedTab === 'assessment';
   if (resolvedTab === 'journal') {
     if (params.segment) opts.segment = params.segment;
     if (params.action) opts.pendingAction = params.action;
@@ -134,14 +140,15 @@ async function route() {
   }
 
   setActiveTab(tabBarEl, resolvedTab);
-  tabBarEl.classList.toggle('is-hidden', isJournalWrite);
-  fabEl.classList.toggle('is-hidden', isJournalWrite || !FAB_TABS.has(resolvedTab));
-  incoming.classList.toggle('view-slot--full', isJournalWrite);
+  tabBarEl.classList.toggle('is-hidden', isImmersive);
+  fabEl.classList.toggle('is-hidden', isImmersive || !FAB_TABS.has(resolvedTab));
+  incoming.classList.toggle('view-slot--full', isImmersive);
   currentTab = resolvedTab;
 
-  // The persistent gear (on document.body) hides on the immersive writing screen and on
-  // Settings itself; everywhere else it stays fixed top-right, even while content scrolls.
-  appGearEl.classList.toggle('is-hidden', isJournalWrite || resolvedTab === 'settings');
+  // The persistent gear (on document.body) hides on the immersive writing/assessment
+  // screens and on Settings itself; everywhere else it stays fixed top-right, even
+  // while content scrolls.
+  appGearEl.classList.toggle('is-hidden', isImmersive || resolvedTab === 'settings');
 
   // Strip the one-shot action param from the URL so a reload doesn't re-trigger it
   // (segment/write/date are not one-shot, so preserve them if present).

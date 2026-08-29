@@ -15,6 +15,18 @@ db.version(1).stores({
   settings: 'id',
 });
 
+// v2.4 -- Life Assessment: dated snapshots (per-area 1-10 scores + free-text
+// reflections). Additive upgrade only -- every v1 store is repeated unchanged.
+db.version(2).stores({
+  days: 'date, updatedAt',
+  tasks: '++id, date, goalId, order',
+  logItems: '++id, date, type, createdAt',
+  goals: '++id, targetDate, createdAt',
+  beliefs: '++id, category, updatedAt',
+  settings: 'id',
+  assessments: '++id, date',
+});
+
 // Local-only debug handle so automated tests can seed data. Never active on the
 // deployed site (GitHub Pages host is not 'localhost').
 if (typeof location !== 'undefined' && location.hostname === 'localhost') {

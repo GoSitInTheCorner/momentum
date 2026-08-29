@@ -798,6 +798,67 @@ async function main() {
   check('offline navigation works (Journal tab reachable)', offlineOverflow <= 402);
   await context.setOffline(false);
 
+  // ---------- Life Assessment (v2.4) -- first-run prompts, guided form, dated snapshot,
+  // Wheel-of-Life-style radar. Runs last so no earlier section has to account for its
+  // "no assessment yet" preconditions on Home/Review. ----------
+  await gotoTab('today');
+  const assessmentTakeCardBefore = await page.locator('#w-assessment:not([hidden])').count();
+  check('Today shows the "Take your Life Assessment" card before any assessment exists', assessmentTakeCardBefore === 1, `count=${assessmentTakeCardBefore}`);
+
+  await gotoTab('review');
+  const reviewAssessmentPromptBefore = await page.locator('#assessment-take-btn').count();
+  check('Review shows the empty Life Assessment prompt before any assessment exists', reviewAssessmentPromptBefore === 1, `count=${reviewAssessmentPromptBefore}`);
+
+  await page.click('#assessment-take-btn');
+  await page.waitForTimeout(400);
+  const assessmentHash = await page.evaluate(() => location.hash);
+  check('Review\'s take-assessment button routes to the Life Assessment view', assessmentHash.startsWith('#/assessment'), assessmentHash);
+
+  const assessmentTabbarHidden = await page.locator('.tabbar.is-hidden').count();
+  check('tab bar is hidden on the immersive Life Assessment view', assessmentTabbarHidden === 1);
+  const assessmentFabHidden = await page.locator('.fab.is-hidden').count();
+  check('FAB is hidden on the immersive Life Assessment view', assessmentFabHidden === 1);
+
+  const assessmentAreaCount = await page.locator('.assessment-area').count();
+  check('Life Assessment renders all 11 life areas', assessmentAreaCount === 11, `count=${assessmentAreaCount}`);
+
+  // Fill a couple of areas: set a slider + type a reflection.
+  const firstArea = page.locator('.assessment-area').first();
+  const firstAreaSlider = firstArea.locator('.hslider__track');
+  const firstBox = await firstAreaSlider.boundingBox();
+  await page.mouse.click(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height * 0.2);
+  await page.waitForTimeout(150);
+  await firstArea.locator('textarea').first().fill('Steadier than I expected, honestly.');
+
+  const secondAreaSlider = page.locator('.assessment-area').nth(1).locator('.hslider__track');
+  await secondAreaSlider.scrollIntoViewIfNeeded();
+  const secondBox = await secondAreaSlider.boundingBox();
+  await page.mouse.click(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height * 0.3);
+  await page.waitForTimeout(150);
+
+  const progressText = await page.locator('#la-progress').innerText();
+  check('progress hint updates as areas are scored', /2 of 11 scored/.test(progressText), progressText);
+  await overflowOK('assessment-form');
+  await screenshot('assessment-form.png');
+
+  await page.click('#la-save');
+  await page.waitForTimeout(400);
+  const afterSaveHash = await page.evaluate(() => location.hash);
+  check('Save routes back to Review', afterSaveHash.startsWith('#/review'), afterSaveHash);
+
+  const assessmentRowCount = await page.evaluate(() => window.__momentumDb.assessments.count());
+  check('an assessments row was written on save', assessmentRowCount === 1, `count=${assessmentRowCount}`);
+
+  await gotoTab('today');
+  const assessmentTakeCardAfter = await page.locator('#w-assessment:not([hidden])').count();
+  check('Today\'s take-assessment card disappears after the first assessment', assessmentTakeCardAfter === 0, `count=${assessmentTakeCardAfter}`);
+
+  await gotoTab('review');
+  const assessmentRadarCanvas = await page.locator('#assessment-radar-chart').count();
+  check('Review renders the Life Assessment radar canvas after taking one', assessmentRadarCanvas === 1, `count=${assessmentRadarCanvas}`);
+  await overflowOK('review-assessment');
+  await screenshot('review-assessment.png');
+
   // ---------- Final assertions: console + network ----------
   check('zero console errors across full run', consoleErrors.length === 0, consoleErrors.slice(0, 10).join(' | '));
   const badExternal = externalRequests.filter((u) => !ALLOWED_EXTERNAL_HOSTS.has(new URL(u).hostname));

@@ -85,24 +85,40 @@ export function renderBarChart(canvas, { labels, data, color }) {
 // active Review period. `max` should match the active rating-scale setting (5/10, or
 // 5 for emoji since that's the slider's internal numeric range) so the ring matches
 // what the sliders themselves can produce.
-export function renderRadarChart(canvas, { labels, data, max = 10 }) {
+//
+// v2.4 -- Life Assessment overlay: pass `series` (array of {label, data, color}) instead
+// of `data` to plot 2+ named datasets (e.g. "Now" vs "Last time") with a legend. `data`
+// stays supported as the single-dataset, no-legend shorthand the Wheel of Life already
+// uses, so that call site needed no changes (DRY -- one radar renderer, two call shapes).
+export function renderRadarChart(canvas, { labels, data, series, max = 10 }) {
   destroyChart(canvas);
   const ink = cssVar('--ink-2', '#8a8371');
   const grid = cssVar('--hairline', 'rgba(0,0,0,0.08)');
   const accent = cssVar('--accent', '#c1622d');
+  const overlayColors = [accent, cssVar('--ink-2', '#8a8371')];
+  const datasets = series
+    ? series.map((s, i) => ({
+      label: s.label,
+      data: s.data,
+      borderColor: s.color || overlayColors[i % overlayColors.length],
+      backgroundColor: i === 0 ? (s.color || overlayColors[i % overlayColors.length]) + '33' : 'transparent',
+      pointBackgroundColor: s.color || overlayColors[i % overlayColors.length],
+      borderDash: i === 1 ? [5, 4] : undefined,
+      borderWidth: 2.5,
+      pointRadius: 3,
+      spanGaps: true,
+    }))
+    : [{
+      data,
+      borderColor: accent,
+      backgroundColor: accent + '33',
+      pointBackgroundColor: accent,
+      borderWidth: 2.5,
+      pointRadius: 3,
+    }];
   const chart = new Chart(canvas.getContext('2d'), {
     type: 'radar',
-    data: {
-      labels,
-      datasets: [{
-        data,
-        borderColor: accent,
-        backgroundColor: accent + '33',
-        pointBackgroundColor: accent,
-        borderWidth: 2.5,
-        pointRadius: 3,
-      }],
-    },
+    data: { labels, datasets },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -118,7 +134,7 @@ export function renderRadarChart(canvas, { labels, data, max = 10 }) {
         },
       },
       plugins: {
-        legend: { display: false },
+        legend: series ? { position: 'bottom', labels: { color: ink, boxWidth: 10, boxHeight: 10, font: { size: 11 }, usePointStyle: true } } : { display: false },
         tooltip: { backgroundColor: cssVar('--card', '#fff'), titleColor: cssVar('--ink', '#222'), bodyColor: cssVar('--ink', '#222'), borderColor: grid, borderWidth: 1, padding: 10, cornerRadius: 8 },
       },
     },
