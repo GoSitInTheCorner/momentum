@@ -1,7 +1,7 @@
-// components/slider.js — vertical "dial" rating control used for health tracking.
-// Distinct from a generic <input type="range"> on purpose: three of these sit
-// side-by-side like little thermometers, which reads much more custom than a
-// row of native sliders.
+// components/slider.js -- compact horizontal rating row used for health tracking.
+// One per line: label + value on top, a thin draggable track underneath. Deliberately
+// understated (flat accent fill, small thumb) rather than a big gradient "pill" -- reads
+// as a refined settings-style control instead of a toy thermometer.
 
 const EMOJI_SCALE = ['😞', '😕', '😐', '🙂', '😄'];
 
@@ -16,13 +16,14 @@ export function createHealthSlider({ key, label, value, scale = '10', desc, onCh
   const wrap = document.createElement('div');
   wrap.className = 'hslider';
   wrap.innerHTML = `
+    <div class="hslider__head">
+      <span class="hslider__label">${label}</span>
+      <span class="hslider__value"></span>
+    </div>
     <div class="hslider__track" tabindex="0" role="slider" aria-label="${label}" aria-valuemin="${min}" aria-valuemax="${max}" aria-valuenow="${current}">
       <div class="hslider__fill"></div>
-      <div class="hslider__thumb">
-        <span class="hslider__value"></span>
-      </div>
+      <div class="hslider__thumb"></div>
     </div>
-    <div class="hslider__label">${label}</div>
     ${desc ? `<div class="hslider__desc">${desc}</div>` : ''}
   `;
 
@@ -33,15 +34,15 @@ export function createHealthSlider({ key, label, value, scale = '10', desc, onCh
 
   function render() {
     const pct = ((current - min) / (max - min)) * 100;
-    fill.style.height = `${pct}%`;
-    thumb.style.bottom = `${pct}%`;
+    fill.style.width = `${pct}%`;
+    thumb.style.left = `${pct}%`;
     valueEl.textContent = scale === 'emoji' ? (EMOJI_SCALE[current - 1] ?? EMOJI_SCALE[EMOJI_SCALE.length - 1]) : current;
     track.setAttribute('aria-valuenow', current);
   }
 
-  function setFromClientY(clientY) {
+  function setFromClientX(clientX) {
     const rect = track.getBoundingClientRect();
-    let pct = 1 - (clientY - rect.top) / rect.height;
+    let pct = (clientX - rect.left) / rect.width;
     pct = Math.max(0, Math.min(1, pct));
     const raw = min + pct * (max - min);
     const next = Math.round(raw);
@@ -56,9 +57,9 @@ export function createHealthSlider({ key, label, value, scale = '10', desc, onCh
   track.addEventListener('pointerdown', (e) => {
     dragging = true;
     track.setPointerCapture(e.pointerId);
-    setFromClientY(e.clientY);
+    setFromClientX(e.clientX);
   });
-  track.addEventListener('pointermove', (e) => { if (dragging) setFromClientY(e.clientY); });
+  track.addEventListener('pointermove', (e) => { if (dragging) setFromClientX(e.clientX); });
   track.addEventListener('pointerup', () => { dragging = false; });
   track.addEventListener('pointercancel', () => { dragging = false; });
   track.addEventListener('keydown', (e) => {

@@ -424,14 +424,14 @@ async function main() {
   const checkinVisible = await page.locator('#checkin-body:not([hidden])').count();
   check('Daily check-in re-expands on tap', checkinVisible === 1);
 
-  // Health sliders -- click near top of each track for a high value. Verify the shared
-  // autosave badge also flashes on a slider change. All 8 non-core areas were already
-  // enabled in Settings above, so (v2.3) they're already in the always-visible row here
-  // too -- 11 tracks total, not just the core 3.
+  // Health sliders -- click near the right end of each (horizontal) track for a high
+  // value. Verify the shared autosave badge also flashes on a slider change. All 8
+  // non-core areas were already enabled in Settings above, so (v2.3) they're already in
+  // the always-visible row here too -- 11 tracks total, not just the core 3.
   const sliders = await page.locator('#health-row .hslider__track').all();
   for (const slider of sliders) {
     const box = await slider.boundingBox();
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.2);
+    await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
     await page.waitForTimeout(150);
   }
   const sliderValues = await page.locator('#health-row .hslider__value').allTextContents();
@@ -461,13 +461,15 @@ async function main() {
     await slider.waitFor({ state: 'visible', timeout: 15000 });
     await slider.scrollIntoViewIfNeeded();
     const box = await slider.boundingBox();
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height * 0.15);
+    await page.mouse.click(box.x + box.width * 0.85, box.y + box.height / 2);
     await page.waitForTimeout(150);
   }
   const hintAfterExpandedSlider = await page.locator('#journal-hint').innerText();
   check('"Saved" indicator also flashes on a life-area slider change', /Saved/.test(hintAfterExpandedSlider), hintAfterExpandedSlider);
-  const financeValueText = (await financeSlider.locator('.hslider__value').innerText()).trim();
-  const spiritValueText = (await spiritSlider.locator('.hslider__value').innerText()).trim();
+  // .hslider__value now lives in the row's head (a sibling of .hslider__track), not
+  // inside the track itself -- scope from the shared .hslider wrapper via :has().
+  const financeValueText = (await page.locator('.hslider:has(.hslider__track[aria-label="Finances"]) .hslider__value').innerText()).trim();
+  const spiritValueText = (await page.locator('.hslider:has(.hslider__track[aria-label="Spirit"]) .hslider__value').innerText()).trim();
   check('Finances and Spirit sliders show a set value', financeValueText.length > 0 && spiritValueText.length > 0, `${financeValueText} / ${spiritValueText}`);
   await screenshot('journal-lifeareas.png');
   await overflowOK('journal-lifeareas-expanded');
@@ -772,8 +774,8 @@ async function main() {
   // v2.3 -- life-area ratings (Finances, Spirit) persisted across reload. Both dims are
   // enabled in Settings (restored above), so they're in the always-visible row now, not
   // behind the expander.
-  const financeValueAfterReload = (await page.locator('#health-row .hslider__track[aria-label="Finances"] .hslider__value').innerText()).trim();
-  const spiritValueAfterReload = (await page.locator('#health-row .hslider__track[aria-label="Spirit"] .hslider__value').innerText()).trim();
+  const financeValueAfterReload = (await page.locator('#health-row .hslider:has(.hslider__track[aria-label="Finances"]) .hslider__value').innerText()).trim();
+  const spiritValueAfterReload = (await page.locator('#health-row .hslider:has(.hslider__track[aria-label="Spirit"]) .hslider__value').innerText()).trim();
   check('Finances rating persisted after reload', financeValueAfterReload === financeValueText, `before=${financeValueText} after=${financeValueAfterReload}`);
   check('Spirit rating persisted after reload', spiritValueAfterReload === spiritValueText, `before=${spiritValueText} after=${spiritValueAfterReload}`);
   await page.click('#checkin-toggle');
@@ -881,14 +883,14 @@ async function main() {
   const firstArea = page.locator('.assessment-area').first();
   const firstAreaSlider = firstArea.locator('.hslider__track');
   const firstBox = await firstAreaSlider.boundingBox();
-  await page.mouse.click(firstBox.x + firstBox.width / 2, firstBox.y + firstBox.height * 0.2);
+  await page.mouse.click(firstBox.x + firstBox.width * 0.8, firstBox.y + firstBox.height / 2);
   await page.waitForTimeout(150);
   await firstArea.locator('textarea').first().fill('Steadier than I expected, honestly.');
 
   const secondAreaSlider = page.locator('.assessment-area').nth(1).locator('.hslider__track');
   await secondAreaSlider.scrollIntoViewIfNeeded();
   const secondBox = await secondAreaSlider.boundingBox();
-  await page.mouse.click(secondBox.x + secondBox.width / 2, secondBox.y + secondBox.height * 0.3);
+  await page.mouse.click(secondBox.x + secondBox.width * 0.7, secondBox.y + secondBox.height / 2);
   await page.waitForTimeout(150);
 
   const progressText = await page.locator('#la-progress').innerText();

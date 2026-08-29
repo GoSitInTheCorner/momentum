@@ -242,7 +242,7 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
     const todayVal = day.ratings?.[dim.key];
     const prefill = typeof todayVal === 'number' ? todayVal : yDay.ratings?.[dim.key];
     return createHealthSlider({
-      key: dim.key, label: dim.label, value: prefill, scale: settings.ratingScale, desc: dim.desc,
+      key: dim.key, label: dim.label, value: prefill, scale: settings.ratingScale,
       onChange: async (v) => {
         badge.saving();
         const cur = await getDay(date);
