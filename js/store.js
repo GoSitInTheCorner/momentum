@@ -53,7 +53,7 @@ export const DEFAULT_SETTINGS = {
   newsTopic: '',             // '' = no filter, else a Noozra category slug
   recapCutoff: 12,           // show the morning "Yesterday" recap before this hour (0-24)
   homeWidgets: {              // per-widget on/off, all default true
-    weather: true, news: true, wordOfDay: true, astrology: true, calendar: true, atAGlance: true, yesterdayRecap: true, todayTasks: true,
+    weather: true, news: true, wordOfDay: true, astrology: true, calendar: true, atAGlance: true, yesterdayRecap: true, todayTasks: true, checkin: true,
   },
 };
 

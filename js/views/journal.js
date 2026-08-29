@@ -3,29 +3,24 @@
 // screen while actually writing are the full date + the textarea + a Back/Done control
 // -- no sliders, tags, or logs, and the tab bar is hidden for it (app.js). The Journal
 // tab itself is a "hub": [ Entries | Beliefs ] segmented toggle; Entries leads with a
-// compact "Today" card + past entries, with the mood/health/emotions/done-learned
-// check-in tucked under a collapsible "Daily check-in" (collapsed by default) so the
-// hub reads as focused, not a wall of controls.
+// compact "Today" card + past entries. v2.6 -- the mood/health/emotions check-in and the
+// done/learned capture both moved OFF this tab: the check-in now lives on Today (see
+// views/today.js's renderCheckinWidget) and done/learned capture was retired in favor of
+// the Tasks tab's "Did it"/"Thought". This tab is just write + entries + search now.
 import {
-  getAllDaysSorted, getTasksForDate, getLogForDate, saveDay, getDay, getSettings,
-  addLogItem, deleteLogItem,
+  getAllDaysSorted, saveDay, getDay, getSettings,
 } from '../store.js';
 import {
   getBeliefs, getBelief, addBelief, updateBeliefStanceText, addStanceUpdate, deleteBelief,
   getLastUsedBeliefCategory, getRecentBeliefTopics,
 } from '../store.js';
-import { todayStr, addDays } from '../db.js';
-import { openFormSheet, openPrompt } from '../components/sheet.js';
-import { openEmotionBank, mountEmotionTagRow } from '../components/emotionbank.js';
-import { createHealthSlider } from '../components/slider.js';
+import { todayStr } from '../db.js';
+import { openFormSheet } from '../components/sheet.js';
+import { openEmotionBank } from '../components/emotionbank.js';
 import { wireAutosave } from '../components/savebadge.js';
 import { escapeHtml, formatDate, formatWeekday, renderMarkdownLite } from '../util.js';
 
 const BELIEF_CATEGORIES = ['political', 'ideology', 'other'];
-
-// Core mood trio: always rendered first, in this exact order, regardless of the
-// stored healthDims array order (v2.1 -- Burchard's 10 Life Areas).
-const CORE_HEALTH_KEYS = ['mental', 'emotional', 'physical'];
 
 // Rotating daily-prompt suggestions -- shared with today.js (Home's one-line reflection
 // prompt reuses promptsForToday()[0] above the "Write today's entry" CTA, and the
@@ -40,7 +35,7 @@ export function promptsForToday() {
   return [0, 1, 2].map((i) => JOURNAL_PROMPTS[(dayOfYear + i) % JOURNAL_PROMPTS.length]);
 }
 
-export async function renderJournal(root, { segment = 'entries', pendingAction, write, date } = {}) {
+export async function renderJournal(root, { segment = 'entries', write, date } = {}) {
   if (write) {
     await renderJournalWrite(root, { date: date || todayStr() });
     return;
@@ -77,7 +72,7 @@ export async function renderJournal(root, { segment = 'entries', pendingAction, 
   });
   setSegment(segment);
 
-  await renderEntriesPane(paneEntries, { pendingAction });
+  await renderEntriesPane(paneEntries);
   await renderBeliefsPane(paneBeliefs);
 }
 
@@ -166,12 +161,10 @@ async function renderJournalWrite(root, { date }) {
 }
 
 // ---------------- Entries pane (hub) ----------------
-async function renderEntriesPane(pane, { pendingAction } = {}) {
+async function renderEntriesPane(pane) {
   const settings = await getSettings();
   const date = todayStr();
-  const yDate = addDays(date, -1);
   const day = await getDay(date);
-  const yDay = await getDay(yDate);
   const hasEntryToday = !!(day.journal && day.journal.trim());
 
   pane.innerHTML = `
@@ -186,31 +179,6 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
         <button class="btn btn--home-cta" id="write-today-btn">${hasEntryToday ? 'Continue writing' : "Write today's entry"} &rarr;</button>
       </section>
 
-      <section class="card">
-        <button type="button" class="checkin-toggle is-open" id="checkin-toggle" aria-expanded="true">
-          <span>Daily check-in</span>
-          <span class="checkin-toggle__chevron" aria-hidden="true">&#9662;</span>
-        </button>
-        <div class="checkin-body" id="checkin-body">
-          <div class="card__title-row"><h2 class="card__title">How are you?</h2></div>
-          <div class="health-row" id="health-row"></div>
-          <button type="button" class="life-areas-toggle" id="life-areas-toggle" hidden>
-            <span id="life-areas-toggle-label">Rate more life areas</span>
-            <span class="life-areas-toggle__chevron" aria-hidden="true">&#9662;</span>
-          </button>
-          <div class="health-row--expand" id="health-row-expand" hidden></div>
-          <div class="emo-tag-mount" id="emo-tag-mount"></div>
-
-          <div class="field-label">Done &amp; learned</div>
-          <div class="log-actions">
-            <button class="chip-btn chip-btn--done" id="add-done-btn">&#9679; I did...</button>
-            <button class="chip-btn chip-btn--learned" id="add-learned-btn">&#9670; I learned...</button>
-          </div>
-          <ul class="log-list" id="log-list"></ul>
-          <div class="autosave-hint" id="journal-hint">&nbsp;</div>
-        </div>
-      </section>
-
       <ul class="entry-list" id="entry-list"></ul>
       <p class="empty-hint" id="entry-empty" hidden>No entries yet. Start writing above.</p>
       <div class="scroll-spacer"></div>
@@ -220,123 +188,6 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
   pane.querySelector('#write-today-btn').addEventListener('click', () => {
     location.hash = '#/journal?write=1';
   });
-
-  // Shared "Saving… / Saved ✓" badge for the check-in block (sliders + log adds).
-  const hint = pane.querySelector('#journal-hint');
-  const badge = wireAutosave(hint);
-
-  const checkinToggle = pane.querySelector('#checkin-toggle');
-  const checkinBody = pane.querySelector('#checkin-body');
-  checkinToggle.addEventListener('click', () => {
-    const opening = checkinBody.hidden;
-    checkinBody.hidden = !opening;
-    checkinToggle.setAttribute('aria-expanded', String(opening));
-    checkinToggle.classList.toggle('is-open', opening);
-  });
-
-  // ---- Health sliders ----
-  // Smart prefill: default each slider to *yesterday's* rating for that dimension when
-  // today has none yet; fall back to the scale midpoint only if yesterday has no data
-  // either. Still fully draggable/editable -- nothing here is written until touched.
-  function makeHealthSlider(dim) {
-    const todayVal = day.ratings?.[dim.key];
-    const prefill = typeof todayVal === 'number' ? todayVal : yDay.ratings?.[dim.key];
-    return createHealthSlider({
-      key: dim.key, label: dim.label, value: prefill, scale: settings.ratingScale,
-      onChange: async (v) => {
-        badge.saving();
-        const cur = await getDay(date);
-        await saveDay(date, { ratings: { ...cur.ratings, [dim.key]: v } });
-        badge.saved();
-      },
-    });
-  }
-
-  const healthRow = pane.querySelector('#health-row');
-  const byKey = new Map(settings.healthDims.map((d) => [d.key, d]));
-  // Core 3 always render first, in this fixed order -- never rely on stored array order.
-  for (const key of CORE_HEALTH_KEYS) {
-    const dim = byKey.get(key);
-    if (dim && dim.enabled) healthRow.appendChild(makeHealthSlider(dim).el);
-  }
-  // Any non-core area the user has explicitly enabled in Settings joins the
-  // always-visible row too (in stored order) -- enabling an area promotes it here.
-  const enabledExtras = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && d.enabled);
-  for (const dim of enabledExtras) healthRow.appendChild(makeHealthSlider(dim).el);
-
-  // Every remaining disabled area -- core or non-core -- is still always reachable --
-  // never hidden behind Settings -- via a collapsed, lazy-mounted "Rate more life
-  // areas" group. They don't exist in the DOM at all until first expanded. Row = all
-  // enabled dims, expander = all disabled dims -- always disjoint, never both/neither.
-  const otherDims = settings.healthDims.filter((d) => !d.enabled);
-  const expandToggle = pane.querySelector('#life-areas-toggle');
-  const expandToggleLabel = pane.querySelector('#life-areas-toggle-label');
-  const expandRow = pane.querySelector('#health-row-expand');
-  if (otherDims.length) {
-    expandToggle.hidden = false;
-    expandToggleLabel.textContent = `Rate more life areas (${otherDims.length})`;
-    let mounted = false;
-    expandToggle.addEventListener('click', () => {
-      const opening = expandRow.hidden;
-      if (opening && !mounted) {
-        for (const dim of otherDims) expandRow.appendChild(makeHealthSlider(dim).el);
-        mounted = true;
-      }
-      expandRow.hidden = !opening;
-      expandToggle.classList.toggle('is-open', opening);
-      expandToggleLabel.textContent = opening ? 'Show fewer life areas' : `Rate more life areas (${otherDims.length})`;
-    });
-  }
-
-  // Emotion tags for today, next to the health sliders (one shared component).
-  mountEmotionTagRow(pane.querySelector('#emo-tag-mount'), { date, tags: day.emotions || [] });
-
-  // ---- Done / learned log ----
-  // getLogForDate() returns every logItems type for the date, including the Tasks
-  // tab's 'thought' entries (v2.5) -- filter down to this section's own two types so a
-  // thought doesn't leak into the "I did.../I learned..." list it's not part of.
-  async function refreshLog() {
-    const items = (await getLogForDate(date)).filter((i) => i.type === 'done' || i.type === 'learned');
-    const listEl = pane.querySelector('#log-list');
-    listEl.innerHTML = items.map((i) => `
-      <li class="log-row log-row--${i.type}" data-id="${i.id}">
-        <span class="log-row__dot">${i.type === 'done' ? '&#9679;' : '&#9670;'}</span>
-        <span class="log-row__text">${escapeHtml(i.text)}</span>
-        <button class="log-row__delete" aria-label="Delete">&times;</button>
-      </li>
-    `).join('');
-    listEl.querySelectorAll('.log-row__delete').forEach((btn) => {
-      btn.addEventListener('click', async () => {
-        badge.saving();
-        await deleteLogItem(Number(btn.closest('.log-row').dataset.id));
-        badge.saved();
-        refreshLog();
-      });
-    });
-  }
-  pane.querySelector('#add-done-btn').addEventListener('click', () => {
-    openPrompt({
-      title: 'I did...', placeholder: 'e.g. Went for a 20-min run', confirmLabel: 'Log it',
-      onSubmit: async (text) => { badge.saving(); await addLogItem(date, 'done', text); badge.saved(); refreshLog(); },
-    });
-  });
-  pane.querySelector('#add-learned-btn').addEventListener('click', () => {
-    openPrompt({
-      title: 'I learned...', placeholder: 'e.g. Async/await pitfalls in JS', confirmLabel: 'Log it',
-      onSubmit: async (text) => { badge.saving(); await addLogItem(date, 'learned', text); badge.saved(); refreshLog(); },
-    });
-  });
-  await refreshLog();
-
-  // ---- Handle FAB pending action (routed here via #/journal?segment=entries&action=X)
-  // -- both actions live inside the collapsible check-in, so expand it first.
-  if (pendingAction === 'done' || pendingAction === 'learned') {
-    checkinBody.hidden = false;
-    checkinToggle.setAttribute('aria-expanded', 'true');
-    checkinToggle.classList.add('is-open');
-  }
-  if (pendingAction === 'done') pane.querySelector('#add-done-btn').click();
-  if (pendingAction === 'learned') pane.querySelector('#add-learned-btn').click();
 
   // ---- Entries list + search ----
   const days = (await getAllDaysSorted()).filter((d) => (d.journal && d.journal.trim()) || Object.keys(d.ratings || {}).length);
@@ -363,12 +214,11 @@ async function renderEntriesPane(pane, { pendingAction } = {}) {
 }
 
 // Exported so Home's calendar (and anywhere else) can open the same day-detail sheet
-// instead of duplicating this markup.
+// instead of duplicating this markup. v2.6 -- trimmed to ratings + journal text only
+// (done/learned capture retired, and Feelings/To-dos moved out to keep this a quick
+// read-only-ish glance rather than a second copy of the Tasks/check-in UI).
 export async function openDayDetail(date, settings) {
-  const [tasks, rawLog, day] = await Promise.all([getTasksForDate(date), getLogForDate(date), getDay(date)]);
-  // Same 'thought' leak as refreshLog() above -- this section is captioned "Done &
-  // learned", so keep it to those two types only.
-  const log = rawLog.filter((i) => i.type === 'done' || i.type === 'learned');
+  const day = await getDay(date);
 
   openFormSheet({
     title: formatWeekday(date),
@@ -385,21 +235,12 @@ export async function openDayDetail(date, settings) {
           ${settings.markdownRender ? `<div class="day-detail__journal-rendered" id="dd-journal-rendered"></div>` : ''}
           <textarea class="journal-input day-detail__journal" style="font-family:var(--journal-font);" ${settings.markdownRender ? 'hidden' : ''}>${escapeHtml(day.journal || '')}</textarea>
 
-          <label class="field-label">Feelings tagged that day</label>
-          <div id="dd-emo-mount"></div>
-
           <label class="field-label">Health ratings</label>
           <div class="day-detail__ratings">
             ${settings.healthDims.filter((d) => d.enabled).map((d) => `
               <div class="day-detail__rating"><b>${day.ratings?.[d.key] ?? '&mdash;'}</b><small>${d.label}</small></div>
             `).join('')}
           </div>
-
-          <label class="field-label">To-dos</label>
-          ${tasks.length ? `<ul class="day-detail__list">${tasks.map((t) => `<li class="${t.done ? 'is-done' : ''}">${t.done ? '&#10003;' : '&#9675;'} ${escapeHtml(t.text)}</li>`).join('')}</ul>` : `<p class="empty-hint">No to-dos that day.</p>`}
-
-          <label class="field-label">Done &amp; learned</label>
-          ${log.length ? `<ul class="day-detail__list">${log.map((i) => `<li>${i.type === 'done' ? '&#9679;' : '&#9670;'} ${escapeHtml(i.text)}</li>`).join('')}</ul>` : `<p class="empty-hint">Nothing logged that day.</p>`}
         </div>
       `;
       const ta = body.querySelector('.day-detail__journal');
@@ -435,7 +276,6 @@ export async function openDayDetail(date, settings) {
           },
         });
       });
-      mountEmotionTagRow(body.querySelector('#dd-emo-mount'), { date, tags: day.emotions || [] });
     },
   });
 }

@@ -1,13 +1,18 @@
-// views/today.js -- Home: a read-mostly launchpad. Arrive & glance; the one exception
-// is the compact "Today's tasks" card (v2.2, check off + quick-add in place). Deeper
-// editing lives on Journal (writing + check-in), Tasks (full to-do list), and Goals
-// (goals/milestones). See docs/SPEC.md "v2 -- Home as an inviting launchpad" + "v2.2".
+// views/today.js -- Home: a read-mostly launchpad, plus the two daily-doing exceptions:
+// the compact "Today's tasks" card (v2.2, check off + quick-add in place) and, since
+// v2.6, the "How are you today?" check-in (moved here from the Journal hub -- see
+// renderCheckinWidget below -- so the daily driver sits right after the morning recap).
+// Deeper editing lives on Journal (writing), Tasks (full to-do list), and Goals
+// (goals/milestones). See docs/SPEC.md "v2 -- Home as an inviting launchpad" + "v2.2"/"v2.6".
 import { todayStr, addDays } from '../db.js';
 import {
-  getSettings, getTasksForDate, getActivityStreak, getDay, getLogForDate, addTask, toggleTask,
-  getAssessmentCount,
+  getSettings, getTasksForDate, getActivityStreak, getDay, saveDay, addTask, toggleTask,
+  getAssessmentCount, getDoneTasks, getThoughts,
 } from '../store.js';
 import { createHomeCalendar } from '../components/homecalendar.js';
+import { createHealthSlider } from '../components/slider.js';
+import { mountEmotionTagRow } from '../components/emotionbank.js';
+import { wireAutosave } from '../components/savebadge.js';
 import { getWeather } from '../services/weather.js';
 import { getHeadlines } from '../services/news.js';
 import { pairsForDate } from '../services/wordpairs.js';
@@ -15,6 +20,11 @@ import { lookupWord } from '../services/dictionary.js';
 import { moonSignFor } from '../services/moon.js';
 import { promptsForToday } from './journal.js';
 import { escapeHtml, formatWeekday } from '../util.js';
+
+// Core mood trio: always rendered first, in this exact order, regardless of the
+// stored healthDims array order (v2.1 -- Burchard's 10 Life Areas). Moved here from
+// journal.js in v2.6 along with the check-in itself.
+const CORE_HEALTH_KEYS = ['mental', 'emotional', 'physical'];
 
 // ---------------- Astrology (fully offline) ----------------
 const ZODIAC = [
@@ -90,6 +100,8 @@ export async function renderToday(root) {
     <div class="scroll-area">
       <section class="card home-widget home-widget--recap" id="w-recap" hidden></section>
 
+      <section class="card home-widget home-widget--checkin" id="w-checkin" ${w.checkin ? '' : 'hidden'}></section>
+
       <section class="card home-widget home-widget--tasks" id="w-tasks" ${w.todayTasks ? '' : 'hidden'}></section>
 
       <section class="card home-widget home-widget--calendar" id="w-calendar" ${w.calendar ? '' : 'hidden'}>
@@ -104,8 +116,8 @@ export async function renderToday(root) {
         <button class="btn btn--home-cta" id="home-cta-btn">Write today's entry &rarr;</button>
       </section>
 
-      <section class="card home-widget home-widget--news" id="w-news" ${w.news ? '' : 'hidden'}></section>
       <section class="card home-widget home-widget--word" id="w-word" ${w.wordOfDay ? '' : 'hidden'}></section>
+      <section class="card home-widget home-widget--news" id="w-news" ${w.news ? '' : 'hidden'}></section>
       <section class="card home-widget home-widget--astro" id="w-astro" ${w.astrology ? '' : 'hidden'}></section>
 
       <section class="card home-widget home-widget--glance" id="w-glance" ${w.atAGlance ? '' : 'hidden'}></section>
@@ -131,6 +143,7 @@ export async function renderToday(root) {
   if (w.wordOfDay) renderWordWidget(view.querySelector('#w-word'), date);
   if (w.astrology) renderAstroWidget(view.querySelector('#w-astro'), settings);
   if (w.todayTasks) renderTasksWidget(view.querySelector('#w-tasks'), date);
+  if (w.checkin) renderCheckinWidget(view.querySelector('#w-checkin'), settings, date);
   if (w.atAGlance) renderGlanceWidget(view.querySelector('#w-glance'), settings, date);
   if (w.yesterdayRecap !== false) renderRecapWidget(view.querySelector('#w-recap'), settings, date);
   renderAssessmentWidget(view.querySelector('#w-assessment'));
@@ -172,6 +185,10 @@ function formatHeaderDate(dateStr) {
 
 // Morning "Yesterday" recap card -- the first thing you see, before the cutoff hour.
 // Surfaces yesterday's wins so the day starts with acknowledgement. Dismissable.
+// v2.6 -- the "wins" list used to read logItems 'done'/'learned' entries; that capture
+// UI is retired, so wins now come from completed tasks (getDoneTasks(), matched by
+// completion date -- or the task's own date if it was never stamped) + thoughts jotted
+// that day (getThoughts()). The tasks-done stat + mood logic are unchanged.
 async function renderRecapWidget(el, settings, date) {
   try {
     const yesterday = addDays(date, -1);
@@ -179,19 +196,23 @@ async function renderRecapWidget(el, settings, date) {
     const dismissed = sessionStorage.getItem('momentum-recap-dismissed') === yesterday;
     if (new Date().getHours() >= cutoff || dismissed) { el.hidden = true; return; }
 
-    const [day, tasks, logs] = await Promise.all([
-      getDay(yesterday), getTasksForDate(yesterday), getLogForDate(yesterday),
+    const [day, tasks, allDoneTasks, allThoughts] = await Promise.all([
+      getDay(yesterday), getTasksForDate(yesterday), getDoneTasks(), getThoughts(),
     ]);
     const doneTasks = tasks.filter((t) => t.done);
-    const doneItems = logs.filter((l) => l.type === 'done');
-    const learnedItems = logs.filter((l) => l.type === 'learned');
+    const winsFromTasks = allDoneTasks.filter((t) => (t.completedAt ? todayStr(new Date(t.completedAt)) : t.date) === yesterday);
+    const winsFromThoughts = allThoughts.filter((l) => l.date === yesterday);
     const hasRatings = day && day.ratings && Object.keys(day.ratings).length > 0;
     const wroteJournal = day && day.journal && day.journal.trim();
-    if (!doneTasks.length && !doneItems.length && !learnedItems.length && !hasRatings && !wroteJournal) {
+    if (!doneTasks.length && !winsFromTasks.length && !winsFromThoughts.length && !hasRatings && !wroteJournal) {
       el.hidden = true; return;
     }
     const mood = moodFor(day || {}, settings.ratingScale);
     const stat = (t) => `<span style="opacity:.85">${t}</span>`;
+    const wins = [
+      ...winsFromTasks.slice(0, 3).map((t) => ({ text: t.text, dotColor: '#c1622d' })),
+      ...winsFromThoughts.slice(0, 2).map((l) => ({ text: l.text, dotColor: '#4a6fa5' })),
+    ];
     el.hidden = false;
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
@@ -200,16 +221,16 @@ async function renderRecapWidget(el, settings, date) {
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:4px;font-size:.9rem;">
         ${doneTasks.length ? stat('&#10003; ' + doneTasks.length + ' task' + (doneTasks.length === 1 ? '' : 's') + ' done') : ''}
-        ${doneItems.length ? stat(doneItems.length + ' accomplished') : ''}
-        ${learnedItems.length ? stat(learnedItems.length + ' learned') : ''}
+        ${winsFromTasks.length ? stat(winsFromTasks.length + ' completed') : ''}
+        ${winsFromThoughts.length ? stat(winsFromThoughts.length + ' thought' + (winsFromThoughts.length === 1 ? '' : 's')) : ''}
         ${mood && mood.kind === 'emoji' ? `<span>${mood.value}</span>` : (mood ? stat(escapeHtml(mood.value)) : '')}
       </div>
-      ${(doneItems.length || learnedItems.length) ? `
+      ${wins.length ? `
         <ul style="list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:6px;">
-          ${[...doneItems.slice(0, 3), ...learnedItems.slice(0, 2)].map((l) => `
+          ${wins.map((w) => `
             <li style="display:flex;gap:8px;align-items:baseline;font-size:.92rem;">
-              <span style="flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:${l.type === 'learned' ? '#4a6fa5' : '#c1622d'};transform:translateY(-1px);"></span>
-              <span>${escapeHtml(l.text)}</span>
+              <span style="flex:0 0 auto;width:6px;height:6px;border-radius:50%;background:${w.dotColor};transform:translateY(-1px);"></span>
+              <span>${escapeHtml(w.text)}</span>
             </li>`).join('')}
         </ul>` : ''}
     `;
@@ -421,6 +442,94 @@ async function renderTasksWidget(el, date) {
     await draw();
   } catch (err) {
     console.warn('today\'s-tasks widget failed', err);
+    el.hidden = true; el.innerHTML = '';
+  }
+}
+
+// "How are you today?" check-in -- moved here from the Journal hub in v2.6 (see
+// docs/SPEC.md) so the daily driver sits on Home, right after the morning recap. This
+// is a straight MOVE of the exact logic that used to live in journal.js's collapsible
+// "Daily check-in": same yesterday-prefill, same core/enabled/disabled dim split, same
+// shared autosave badge. The "Done & learned" log that used to live alongside it on
+// Journal is NOT ported -- that capture is retired in favor of the Tasks tab's
+// "Did it"/"Thought" (see renderRecapWidget below for the new recap source).
+async function renderCheckinWidget(el, settings, date) {
+  try {
+    const yDate = addDays(date, -1);
+    const [day, yDay] = await Promise.all([getDay(date), getDay(yDate)]);
+
+    el.innerHTML = `
+      <div class="card__title-row"><h2 class="card__title">How are you today?</h2></div>
+      <div class="health-row" id="checkin-health-row"></div>
+      <button type="button" class="life-areas-toggle" id="checkin-life-areas-toggle" hidden>
+        <span id="checkin-life-areas-toggle-label">Rate more life areas</span>
+        <span class="life-areas-toggle__chevron" aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="health-row--expand" id="checkin-health-row-expand" hidden></div>
+      <div class="emo-tag-mount" id="checkin-emo-tag-mount"></div>
+      <div class="autosave-hint" id="checkin-hint">&nbsp;</div>
+    `;
+
+    const badge = wireAutosave(el.querySelector('#checkin-hint'));
+
+    // Smart prefill: default each slider to *yesterday's* rating for that dimension
+    // when today has none yet; fall back to the scale midpoint only if yesterday has
+    // no data either. Still fully draggable/editable -- nothing here is written until
+    // touched.
+    function makeHealthSlider(dim) {
+      const todayVal = day.ratings?.[dim.key];
+      const prefill = typeof todayVal === 'number' ? todayVal : yDay.ratings?.[dim.key];
+      return createHealthSlider({
+        key: dim.key, label: dim.label, value: prefill, scale: settings.ratingScale,
+        onChange: async (v) => {
+          badge.saving();
+          const cur = await getDay(date);
+          await saveDay(date, { ratings: { ...cur.ratings, [dim.key]: v } });
+          badge.saved();
+        },
+      });
+    }
+
+    const healthRow = el.querySelector('#checkin-health-row');
+    const byKey = new Map(settings.healthDims.map((d) => [d.key, d]));
+    // Core 3 always render first, in this fixed order -- never rely on stored array order.
+    for (const key of CORE_HEALTH_KEYS) {
+      const dim = byKey.get(key);
+      if (dim && dim.enabled) healthRow.appendChild(makeHealthSlider(dim).el);
+    }
+    // Any non-core area the user has explicitly enabled in Settings joins the
+    // always-visible row too (in stored order) -- enabling an area promotes it here.
+    const enabledExtras = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && d.enabled);
+    for (const dim of enabledExtras) healthRow.appendChild(makeHealthSlider(dim).el);
+
+    // Every remaining disabled area -- core or non-core -- is still always reachable --
+    // never hidden behind Settings -- via a collapsed, lazy-mounted "Rate more life
+    // areas" group. They don't exist in the DOM at all until first expanded. Row = all
+    // enabled dims, expander = all disabled dims -- always disjoint, never both/neither.
+    const otherDims = settings.healthDims.filter((d) => !d.enabled);
+    const expandToggle = el.querySelector('#checkin-life-areas-toggle');
+    const expandToggleLabel = el.querySelector('#checkin-life-areas-toggle-label');
+    const expandRow = el.querySelector('#checkin-health-row-expand');
+    if (otherDims.length) {
+      expandToggle.hidden = false;
+      expandToggleLabel.textContent = `Rate more life areas (${otherDims.length})`;
+      let mounted = false;
+      expandToggle.addEventListener('click', () => {
+        const opening = expandRow.hidden;
+        if (opening && !mounted) {
+          for (const dim of otherDims) expandRow.appendChild(makeHealthSlider(dim).el);
+          mounted = true;
+        }
+        expandRow.hidden = !opening;
+        expandToggle.classList.toggle('is-open', opening);
+        expandToggleLabel.textContent = opening ? 'Show fewer life areas' : `Rate more life areas (${otherDims.length})`;
+      });
+    }
+
+    // Emotion tags for today, next to the health sliders (one shared component).
+    mountEmotionTagRow(el.querySelector('#checkin-emo-tag-mount'), { date, tags: day.emotions || [] });
+  } catch (err) {
+    console.warn('check-in widget failed', err);
     el.hidden = true; el.innerHTML = '';
   }
 }

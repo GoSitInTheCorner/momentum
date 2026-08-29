@@ -596,24 +596,6 @@ body::before {
 /* Hidden while the immersive journal-writing view is open (v2.2). */
 .tabbar.is-hidden { transform: translateY(100%); pointer-events: none; }
 
-/* ---------- FAB ---------- */
-.fab {
-  position: fixed;
-  right: calc(20px + var(--safe-right));
-  bottom: calc(76px + var(--safe-bottom));
-  width: 58px; height: 58px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: #fffaf2;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 10px 24px -8px rgba(var(--accent-rgb), 0.55);
-  z-index: 60;
-  transition: transform 0.18s ease, opacity 0.18s ease;
-}
-.fab svg { width: 26px; height: 26px; }
-.fab:active { transform: scale(0.92); }
-.fab.is-hidden { transform: scale(0.4); opacity: 0; pointer-events: none; }
-
 /* ---------- Bottom sheets ---------- */
 .sheet-backdrop {
   position: fixed; inset: 0; background: rgba(0,0,0,0);
@@ -916,3 +898,9 @@ a.news-widget__item:active { opacity: 0.7; }
 /* Today first-run card + Review's snapshot/prompt card. */
 .home-widget--assessment .assessment-widget__line { font-size: calc(13px * var(--font-scale)); color: var(--ink-2); margin: 4px 0; }
 .assessment-card__date { font-size: calc(12px * var(--font-scale)); color: var(--ink-2); margin-bottom: 10px; }
+
+/* "How are you today?" check-in card on Today (v2.6 -- moved from the Journal hub).
+   Reuses .health-row/.life-areas-toggle/.emo-row wholesale; just tightens the vertical
+   rhythm now that there's no .checkin-body wrapper supplying it. */
+.home-widget--checkin .health-row { margin-top: 4px; }
+.home-widget--checkin .emo-tag-mount { margin-top: 16px; }

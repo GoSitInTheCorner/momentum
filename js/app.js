@@ -1,9 +1,10 @@
-// app.js -- app shell: boot sequence, hash router, persistent tab bar + FAB.
+// app.js -- app shell: boot sequence, hash router, persistent tab bar + gear. The FAB
+// (quick-capture "+") was retired in v2.6 -- inline capture on Tasks/Today/Journal
+// covers everything it used to route to (see docs/SPEC.md v2.6).
 import { getSettings, on } from './store.js';
 import { applyTheme, watchSystemTheme } from './theme.js';
 import { maybeShowLock, startIdleWatch } from './lock.js';
 import { renderTabBar, setActiveTab, iconGear } from './components/tabbar.js';
-import { renderFab } from './components/fab.js';
 import { renderToday } from './views/today.js';
 import { renderJournal } from './views/journal.js';
 import { renderReview } from './views/review.js';
@@ -21,15 +22,7 @@ const RENDERERS = {
   settings: renderSettings,
   assessment: renderAssessment,
 };
-// v2.2 -- Settings moved off the tab bar to a gear button (see wireHeaderGear below),
-// so it's no longer in this set: FAB stays on Home, Journal, and Tasks -- Home has zero
-// inline-edit affordances (besides its compact to-dos card) so it needs the FAB most;
-// Journal/Tasks also keep their own inline "+ Add" controls for adding directly
-// in-context. Goals only creates goals now (no quick-capture action lives there);
-// Review/Settings have no capture action either -- no FAB on any of those three.
-const FAB_TABS = new Set(['today', 'journal', 'tasks']);
-
-let viewHost, tabBarEl, fabEl, appGearEl;
+let viewHost, tabBarEl, appGearEl;
 let currentTab = null;
 
 function parseHash() {
@@ -56,9 +49,6 @@ async function boot() {
   tabBarEl = renderTabBar('today', navigateToTab);
   document.body.appendChild(tabBarEl);
 
-  fabEl = renderFab(handleFabAction);
-  document.body.appendChild(fabEl);
-
   // Persistent Settings gear on document.body -- kept OUT of the view-slots because their
   // transform traps position:fixed. Stays docked top-right while page content scrolls.
   appGearEl = document.createElement('button');
@@ -83,27 +73,6 @@ function navigateToTab(tab) {
   location.hash = `#/${tab}`;
 }
 
-// Each quick-capture action now routes to the deep tab that owns that widget (Home
-// itself has no inline editing, apart from its compact to-dos card) -- see
-// docs/SPEC.md "Move daily doing/logging OFF Home INTO deep tabs". Journal note now
-// opens the dedicated full-screen writing view directly (v2.2 -- see journal.js).
-const FAB_ROUTES = {
-  task: '#/tasks?action=task',
-  done: '#/journal?segment=entries&action=done',
-  learned: '#/journal?segment=entries&action=learned',
-  journal: '#/journal?write=1',
-};
-
-function handleFabAction(actionId) {
-  const newHash = FAB_ROUTES[actionId] || '#/today';
-  const unchanged = location.hash === newHash;
-  location.hash = newHash;
-  // hashchange only fires when the hash string actually changes. If we're already on
-  // this exact hash (e.g. FAB tapped twice for the same action), force one route pass
-  // ourselves -- otherwise let the single hashchange listener own every render.
-  if (unchanged) route();
-}
-
 async function route() {
   const { tab, params } = parseHash();
   const resolvedTab = tab || 'today';
@@ -115,9 +84,9 @@ async function route() {
   const opts = {};
   // v2.2 -- the Journal tab's dedicated full-screen writing view (?write=1, optionally
   // scoped to a past day via &date=YYYY-MM-DD). It replaces the whole hub UI, so the
-  // tab bar + FAB are hidden for it below (immersive, one-thing-at-a-time).
+  // tab bar is hidden for it below (immersive, one-thing-at-a-time).
   const isJournalWrite = resolvedTab === 'journal' && !!params.write;
-  // The Life Assessment view is also immersive (own header/back-arrow, no tab bar/FAB,
+  // The Life Assessment view is also immersive (own header/back-arrow, no tab bar,
   // full-bleed layout) but is reached only via buttons (Today/Review), never the tab
   // bar -- see isJournalWrite's opts below, which stay journal-specific.
   const isImmersive = isJournalWrite || resolvedTab === 'assessment';
@@ -141,7 +110,6 @@ async function route() {
 
   setActiveTab(tabBarEl, resolvedTab);
   tabBarEl.classList.toggle('is-hidden', isImmersive);
-  fabEl.classList.toggle('is-hidden', isImmersive || !FAB_TABS.has(resolvedTab));
   incoming.classList.toggle('view-slot--full', isImmersive);
   currentTab = resolvedTab;
 

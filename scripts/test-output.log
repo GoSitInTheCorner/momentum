@@ -1,10 +1,18 @@
-PASS -- Settings has all 7 home-widget toggles :: count=7
+PASS -- Settings has all 8 home-widget toggles :: count=8
 PASS -- Settings has all 11 health-dim toggles :: count=11
 PASS -- no horizontal overflow (home-initial) :: scrollWidth=402
-PASS -- Home has no full editing surfaces (no textarea/sliders) -- only the compact to-dos card is editable :: count=0
+PASS -- Home has no full-text journal entry surface (no textarea) :: count=0
 PASS -- Home shows the compact "Today's tasks" card :: count=1
 PASS -- quick-add on Home creates a to-do :: count=1
 PASS -- checking off a to-do on Home works :: count=1
+PASS -- all 11 always-visible health sliders set on the Today check-in (core 3 + every enabled life area) :: ["6","6","6","6","6","6","6","6","8","8","8"]
+PASS -- "Saved" indicator also flashes on a check-in slider change :: Saved ✓
+PASS -- all 11 sliders show immediately once every life area is enabled in Settings :: count=11
+PASS -- "Rate more life areas" toggle hides once nothing remains to expand
+PASS -- "Saved" indicator also flashes on a life-area slider change :: Saved ✓
+PASS -- Finances and Spirit sliders show a set value :: 9 / 9
+PASS -- no horizontal overflow (home-checkin-expanded) :: scrollWidth=402
+PASS -- emotion tag added via check-in slider trigger :: ["Proud"]
 PASS -- astrology shows correct sun sign for sample birth date (Gemini) :: Astrology
 SUN SIGN
 Gemini
@@ -46,7 +54,6 @@ PASS -- writing view shows the full written date header :: Saturday, August 29, 
 PASS -- writing view entry field starts EMPTY (no prompt text prefilled) :: ""
 PASS -- empty entry field offers the daily prompt as a PLACEHOLDER, not real content :: What is on your mind?
 PASS -- tab bar is hidden in the writing view
-PASS -- FAB is hidden in the writing view
 PASS -- writing view shows nothing but the date + textarea (no sliders/tags/log) :: count=0
 PASS -- writing view leaves the entry field focused/ready to type
 PASS -- "Saving…" indicator appears while the writing-view debounce is pending :: Saving…
@@ -74,18 +81,7 @@ PASS -- Goals no longer shows the to-do list :: count=0
 PASS -- goal with milestone created :: count=1
 PASS -- no horizontal overflow (goals) :: scrollWidth=402
 PASS -- no horizontal overflow (journal-hub) :: scrollWidth=402
-PASS -- Journal "Daily check-in" is open by default
-PASS -- Daily check-in collapses on tap
-PASS -- Daily check-in re-expands on tap
-PASS -- all 11 always-visible health sliders set (core 3 + every enabled life area) :: ["8","8","8","8","8","8","6","6","6","6","6"]
-PASS -- "Saved" indicator also flashes on a slider change :: Saved ✓
-PASS -- all 11 sliders show immediately once every life area is enabled in Settings :: count=11
-PASS -- "Rate more life areas" toggle hides once nothing remains to expand
-PASS -- "Saved" indicator also flashes on a life-area slider change :: Saved ✓
-PASS -- Finances and Spirit sliders show a set value :: 9 / 9
-PASS -- no horizontal overflow (journal-lifeareas-expanded) :: scrollWidth=402
-PASS -- done + learned log items added :: count=2
-PASS -- emotion tag added via slider trigger :: ["Proud"]
+PASS -- Journal no longer has the check-in or done/learned capture :: count=0
 PASS -- no horizontal overflow (journal-populated) :: scrollWidth=402
 PASS -- no horizontal overflow (review) :: scrollWidth=402
 PASS -- Review cycles all 4 periods + custom without console errors
@@ -115,7 +111,7 @@ PASS -- turning Mental back on in Settings restores it to the always-visible row
 PASS -- AMOLED theme applies true-black background :: #000000
 PASS -- passcode lock engages on reload when enabled :: overlay count=1
 PASS -- correct passcode unlocks the app
-PASS -- export backup produced a downloadable file :: C:\Users\User\AppData\Local\Temp\playwright-artifacts-DIcfiU\e646bc42-e6bd-4365-8bc2-a5be801ce322
+PASS -- export backup produced a downloadable file :: C:\Users\User\AppData\Local\Temp\playwright-artifacts-CmbOaP\6d2623af-0d56-4161-b27c-8135939df16f
 PASS -- open tasks persisted after reload (Tasks tab "To do") :: count=1
 PASS -- the past-dated open task is still in "To do" after reload (persistence, no carryover step needed) :: Aug 26
 PASS -- "Done & thoughts" count persisted after reload :: 4
@@ -134,7 +130,7 @@ Pisces
 curious and quick-witted, energized b
 PASS -- Review handles an empty custom range without crashing (incl. Wheel of Life empty-state) :: consoleErrors=0 wheelEmptyHidden=false
 PASS -- yesterday recap card shows on Home :: count=1
-PASS -- recap surfaces yesterday activity :: YESTERDAY · FRIDAY, AUGUST 28, 2026 × ✓ 1 task done 1 accomplished 1 learned Shipped the r
+PASS -- recap surfaces yesterday activity :: YESTERDAY · FRIDAY, AUGUST 28, 2026 × ✓ 2 tasks done 2 completed 1 thought Shipped the rec
 PASS -- recap dismiss hides the card :: count=0
 PASS -- app renders while offline (service worker cache hit) :: tabbar count=1
 PASS -- "Words to sit with" still renders fully offline :: count=2 expected=2
@@ -144,7 +140,6 @@ PASS -- Today shows the "Take your Life Assessment" card before any assessment e
 PASS -- Review shows the empty Life Assessment prompt before any assessment exists :: count=1
 PASS -- Review's take-assessment button routes to the Life Assessment view :: #/assessment
 PASS -- tab bar is hidden on the immersive Life Assessment view
-PASS -- FAB is hidden on the immersive Life Assessment view
 PASS -- Life Assessment renders all 11 life areas :: count=11
 PASS -- progress hint updates as areas are scored :: 2 of 11 scored
 PASS -- no horizontal overflow (assessment-form) :: scrollWidth=402
@@ -157,4 +152,4 @@ PASS -- zero console errors across full run
 PASS -- every external request targets the allowlisted keyless APIs
 
 === SUMMARY ===
-130/130 checks passed
+125/125 checks passed

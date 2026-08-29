@@ -129,7 +129,7 @@ function renderBehavior(el, settings, update) {
 const HOME_WIDGET_ROWS = [
   ['weather', 'Weather'], ['news', 'News peek'], ['wordOfDay', 'Words to sit with'],
   ['astrology', 'Astrology'], ['calendar', 'Calendar'], ['atAGlance', 'At-a-glance strip'],
-  ['todayTasks', "Today's tasks"],
+  ['todayTasks', "Today's tasks"], ['checkin', 'Daily check-in'],
 ];
 
 function renderHome(el, settings, update) {
