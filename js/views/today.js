@@ -473,10 +473,15 @@ async function renderTasksWidget(el, date) {
 // "How are you today?" check-in -- moved here from the Journal hub in v2.6 (see
 // docs/SPEC.md) so the daily driver sits on Home, right after the morning recap. This
 // is a straight MOVE of the exact logic that used to live in journal.js's collapsible
-// "Daily check-in": same yesterday-prefill, same core/enabled/disabled dim split, same
-// shared autosave badge. The "Done & learned" log that used to live alongside it on
-// Journal is NOT ported -- that capture is retired in favor of the Tasks tab's
-// "Did it"/"Thought" (see renderRecapWidget below for the new recap source).
+// "Daily check-in": same yesterday-prefill, same shared autosave badge. The "Done &
+// learned" log that used to live alongside it on Journal is NOT ported -- that capture
+// is retired in favor of the Tasks tab's "Did it"/"Thought" (see renderRecapWidget
+// below for the new recap source).
+// v2.6.2 -- trimmed to the 3 core sliders (Mental/Emotional/Physical) only; the other
+// 8 Burchard life areas are Life Assessment-only now (data/assessment.json +
+// views/assessment.js). The "Rate more life areas" expander that used to surface those
+// 8 here is removed -- the per-area enable toggles in Settings for those 8 no longer
+// affect this widget (vestigial; Settings UI left as-is).
 async function renderCheckinWidget(el, settings, date) {
   try {
     const yDate = addDays(date, -1);
@@ -485,11 +490,6 @@ async function renderCheckinWidget(el, settings, date) {
     el.innerHTML = `
       <div class="card__title-row"><h2 class="card__title">How are you today?</h2></div>
       <div class="health-row" id="checkin-health-row"></div>
-      <button type="button" class="life-areas-toggle" id="checkin-life-areas-toggle" hidden>
-        <span id="checkin-life-areas-toggle-label">Rate more life areas</span>
-        <span class="life-areas-toggle__chevron" aria-hidden="true">&#9662;</span>
-      </button>
-      <div class="health-row--expand" id="checkin-health-row-expand" hidden></div>
       <div class="emo-tag-mount" id="checkin-emo-tag-mount"></div>
       <div class="autosave-hint" id="checkin-hint">&nbsp;</div>
     `;
@@ -520,34 +520,6 @@ async function renderCheckinWidget(el, settings, date) {
     for (const key of CORE_HEALTH_KEYS) {
       const dim = byKey.get(key);
       if (dim && dim.enabled) healthRow.appendChild(makeHealthSlider(dim).el);
-    }
-    // Any non-core area the user has explicitly enabled in Settings joins the
-    // always-visible row too (in stored order) -- enabling an area promotes it here.
-    const enabledExtras = settings.healthDims.filter((d) => !CORE_HEALTH_KEYS.includes(d.key) && d.enabled);
-    for (const dim of enabledExtras) healthRow.appendChild(makeHealthSlider(dim).el);
-
-    // Every remaining disabled area -- core or non-core -- is still always reachable --
-    // never hidden behind Settings -- via a collapsed, lazy-mounted "Rate more life
-    // areas" group. They don't exist in the DOM at all until first expanded. Row = all
-    // enabled dims, expander = all disabled dims -- always disjoint, never both/neither.
-    const otherDims = settings.healthDims.filter((d) => !d.enabled);
-    const expandToggle = el.querySelector('#checkin-life-areas-toggle');
-    const expandToggleLabel = el.querySelector('#checkin-life-areas-toggle-label');
-    const expandRow = el.querySelector('#checkin-health-row-expand');
-    if (otherDims.length) {
-      expandToggle.hidden = false;
-      expandToggleLabel.textContent = `Rate more life areas (${otherDims.length})`;
-      let mounted = false;
-      expandToggle.addEventListener('click', () => {
-        const opening = expandRow.hidden;
-        if (opening && !mounted) {
-          for (const dim of otherDims) expandRow.appendChild(makeHealthSlider(dim).el);
-          mounted = true;
-        }
-        expandRow.hidden = !opening;
-        expandToggle.classList.toggle('is-open', opening);
-        expandToggleLabel.textContent = opening ? 'Show fewer life areas' : `Rate more life areas (${otherDims.length})`;
-      });
     }
 
     // Emotion tags for today, next to the health sliders (one shared component).

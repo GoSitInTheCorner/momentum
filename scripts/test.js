@@ -233,14 +233,15 @@ async function main() {
 
   // ---------------- "How are you today?" check-in (v2.6 -- moved here from the
   // Journal hub; always visible now, no collapsible toggle, no done/learned log). ------
+  // v2.6.2 -- trimmed to the 3 core sliders (Mental/Emotional/Physical) only; the other
+  // 8 Burchard life areas (enabled above in Settings) are Life Assessment-only now and
+  // no longer render here, and the "Rate more life areas" expander is gone entirely.
   // Health sliders -- click near the right end of each (horizontal) track for a high
-  // value. Verify the shared autosave badge also flashes on a slider change. All 8
-  // non-core areas were already enabled in Settings above, so they're already in the
-  // always-visible row too -- 11 tracks total, not just the core 3.
+  // value. Verify the shared autosave badge also flashes on a slider change.
   // v2.6.1 -- the check-in card moved further down the page (below tasks + calendar),
   // so these sliders are no longer guaranteed to start in-viewport; scroll each into
-  // view first (as the Finances/Spirit/etc. sliders below already do) or a raw
-  // page.mouse.click() at an off-screen boundingBox() misses the element entirely.
+  // view first or a raw page.mouse.click() at an off-screen boundingBox() misses the
+  // element entirely.
   const checkinSliders = await page.locator('#checkin-health-row .hslider__track').all();
   for (const slider of checkinSliders) {
     await slider.scrollIntoViewIfNeeded();
@@ -249,38 +250,18 @@ async function main() {
     await page.waitForTimeout(150);
   }
   const checkinSliderValues = await page.locator('#checkin-health-row .hslider__value').allTextContents();
-  check('all 11 always-visible health sliders set on the Today check-in (core 3 + every enabled life area)', checkinSliderValues.length === 11 && checkinSliderValues.every((v) => v.trim().length > 0), JSON.stringify(checkinSliderValues));
+  check('the Today check-in renders exactly the 3 core sliders (Mental/Emotional/Physical), all set', checkinSliderValues.length === 3 && checkinSliderValues.every((v) => v.trim().length > 0), JSON.stringify(checkinSliderValues));
   const hintAfterCheckinSlider = await page.locator('#checkin-hint').innerText();
   check('"Saved" indicator also flashes on a check-in slider change', /Saved/.test(hintAfterCheckinSlider), hintAfterCheckinSlider);
+  // Captured for the reload-persistence check much later in this run.
+  const physicalValueText = (await page.locator('#checkin-health-row .hslider:has(.hslider__track[aria-label="Physical"]) .hslider__value').innerText()).trim();
 
-  // v2.3 -- all 10+ life areas are always findable to rate: an enabled non-core area
-  // joins the core 3 in the always-visible row (never stuck behind an unreached
-  // expander), and only areas still NOT enabled sit behind "Rate more life areas".
-  const allEnabledCheckinTracks = await page.locator('#checkin-health-row .hslider__track').count();
-  check('all 11 sliders show immediately once every life area is enabled in Settings', allEnabledCheckinTracks === 11, `count=${allEnabledCheckinTracks}`);
-  const checkinExpandHiddenWhenNothingLeft = await page.locator('#checkin-life-areas-toggle').isHidden();
-  check('"Rate more life areas" toggle hides once nothing remains to expand', checkinExpandHiddenWhenNothingLeft);
-
-  // Set two of the areas via slider interaction; confirm the shared autosave badge
-  // fires for them too, same as the core-3 check above.
-  const financeSlider = page.locator('#checkin-health-row .hslider__track[aria-label="Finances"]');
-  const spiritSlider = page.locator('#checkin-health-row .hslider__track[aria-label="Spirit"]');
-  // Also fill a few more of the 8 (visual richness for the screenshot only, no
-  // dedicated assertions on these beyond "no crash / no overflow").
-  const familySlider = page.locator('#checkin-health-row .hslider__track[aria-label="Family"]');
-  const adventureSlider = page.locator('#checkin-health-row .hslider__track[aria-label="Adventure"]');
-  for (const slider of [financeSlider, spiritSlider, familySlider, adventureSlider]) {
-    await slider.waitFor({ state: 'visible', timeout: 15000 });
-    await slider.scrollIntoViewIfNeeded();
-    const box = await slider.boundingBox();
-    await page.mouse.click(box.x + box.width * 0.85, box.y + box.height / 2);
-    await page.waitForTimeout(150);
-  }
-  const hintAfterExpandedCheckinSlider = await page.locator('#checkin-hint').innerText();
-  check('"Saved" indicator also flashes on a life-area slider change', /Saved/.test(hintAfterExpandedCheckinSlider), hintAfterExpandedCheckinSlider);
-  const financeValueText = (await page.locator('#checkin-health-row .hslider:has(.hslider__track[aria-label="Finances"]) .hslider__value').innerText()).trim();
-  const spiritValueText = (await page.locator('#checkin-health-row .hslider:has(.hslider__track[aria-label="Spirit"]) .hslider__value').innerText()).trim();
-  check('Finances and Spirit sliders show a set value', financeValueText.length > 0 && spiritValueText.length > 0, `${financeValueText} / ${spiritValueText}`);
+  // v2.6.2 -- the "Rate more life areas" expander is removed entirely, even though all
+  // 8 non-core areas are enabled in Settings (above) -- they no longer affect this widget.
+  const checkinExpandToggleCount = await page.locator('#checkin-life-areas-toggle').count();
+  check('the "Rate more life areas" toggle no longer exists on the Today check-in', checkinExpandToggleCount === 0, `count=${checkinExpandToggleCount}`);
+  const checkinExpandRowCount = await page.locator('#checkin-health-row-expand').count();
+  check('the check-in expander container no longer exists on the Today check-in', checkinExpandRowCount === 0, `count=${checkinExpandRowCount}`);
   await screenshot('home-checkin.png');
   await overflowOK('home-checkin-expanded');
 
@@ -476,17 +457,27 @@ async function main() {
   const secondRowDate = await page.locator('#open-task-list .task-row').nth(1).locator('.task-date').innerText();
   check('today\'s open task shows a "Today" date chip', secondRowDate.trim() === 'Today', secondRowDate);
 
-  // Done & thoughts: collapsed by default, count = 1 done task from Home (checked off
-  // earlier) + the new "Did it" task + the new thought = 3.
-  const historyHiddenInitially = await page.locator('#history-body[hidden]').count();
-  check('"Done & thoughts" is collapsed by default', historyHiddenInitially === 1);
+  // Done & thoughts: OPEN by default (v2.6.2 -- so completed items are visible without
+  // hunting), count = 1 done task from Home (checked off earlier) + the new "Did it"
+  // task + the new thought = 3.
+  const historyVisibleInitially = await page.locator('#history-body:not([hidden])').count();
+  check('"Done & thoughts" is open by default', historyVisibleInitially === 1);
+  const historyToggleOpenInitially = await page.getAttribute('#history-toggle', 'aria-expanded');
+  check('"Done & thoughts" toggle reports expanded on load', historyToggleOpenInitially === 'true', historyToggleOpenInitially);
   const historyCountBefore = await page.locator('#history-count').innerText();
   check('"Done & thoughts" count reflects done tasks + thoughts', historyCountBefore.trim() === '3', historyCountBefore);
+  const historyRows = await page.locator('#history-list .log-row').count();
+  check('"Done & thoughts" shows every done task + thought without tapping the toggle', historyRows === 3, `count=${historyRows}`);
 
+  // Toggle still collapses on first tap (state-driven off historyBody.hidden).
   await page.click('#history-toggle');
   await page.waitForTimeout(200);
-  const historyRows = await page.locator('#history-list .log-row').count();
-  check('expanding "Done & thoughts" shows every done task + thought', historyRows === 3, `count=${historyRows}`);
+  const historyHiddenAfterFirstTap = await page.locator('#history-body[hidden]').count();
+  check('tapping the toggle collapses "Done & thoughts" (still works from an open start)', historyHiddenAfterFirstTap === 1, `count=${historyHiddenAfterFirstTap}`);
+  await page.click('#history-toggle');
+  await page.waitForTimeout(200);
+  const historyRowsAfterReopen = await page.locator('#history-list .log-row').count();
+  check('re-expanding "Done & thoughts" shows every done task + thought', historyRowsAfterReopen === 3, `count=${historyRowsAfterReopen}`);
   const doneGlyphRows = await page.locator('#history-list .log-row--task-done').count();
   check('done tasks in history show the check glyph + strike-through styling hook', doneGlyphRows === 2, `count=${doneGlyphRows}`);
   const thoughtGlyphRows = await page.locator('#history-list .log-row--thought').count();
@@ -659,61 +650,35 @@ async function main() {
   });
   await page.waitForTimeout(150);
 
-  // ---------- Health-dim toggle: verify toggling Finances off in Settings demotes it
-  // from the always-visible row into the "Rate more life areas" expander (never fully
-  // hidden -- still reachable), and toggling it back on promotes it back. ----------
+  // ---------- Health-dim toggle (v2.6.2): the check-in is now fixed to the 3 core
+  // sliders, so toggling a non-core area (Finances) in Settings is vestigial -- it must
+  // have NO effect on the check-in at all (no expander to fall into anymore). Toggling
+  // a CORE area (Mental) off still removes it from the check-in, since only enabled
+  // core dims render. ----------
   const financeToggle = page.locator('.dim-row', { hasText: 'Finances' }).locator('.dim-toggle');
   await financeToggle.evaluate((el) => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('today');
-  const financeGoneFromRowCount = await page.locator('#checkin-health-row .hslider__track[aria-label="Finances"]').count();
-  check('turning off Finances in Settings removes it from the always-visible row', financeGoneFromRowCount === 0, `count=${financeGoneFromRowCount}`);
-  const expandLabelWithFinance = await page.locator('#checkin-life-areas-toggle-label').innerText();
-  check('"Rate more life areas" toggle reappears with a count of 1 once an area is turned off', /Rate more life areas \(1\)/.test(expandLabelWithFinance), expandLabelWithFinance);
-  await page.click('#checkin-life-areas-toggle');
-  await page.waitForTimeout(200);
-  const financeInExpandCount = await page.locator('#checkin-health-row-expand .hslider__track[aria-label="Finances"]').count();
-  check('turning off Finances in Settings still leaves it reachable in the expand-group', financeInExpandCount === 1, `count=${financeInExpandCount}`);
-  await page.click('#checkin-life-areas-toggle');
-  await page.waitForTimeout(150);
+  const checkinTracksAfterFinanceOff = await page.locator('#checkin-health-row .hslider__track').count();
+  check('turning off a non-core area (Finances) in Settings has no effect on the check-in (still 3 core sliders)', checkinTracksAfterFinanceOff === 3, `count=${checkinTracksAfterFinanceOff}`);
   await openSettings();
   await financeToggle.evaluate((el) => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
-  await gotoTab('today');
-  const financeBackCount = await page.locator('#checkin-health-row .hslider__track[aria-label="Finances"]').count();
-  check('turning Finances back on in Settings restores it to the always-visible row', financeBackCount === 1, `count=${financeBackCount}`);
-  const expandHiddenAgainAfterRestore = await page.locator('#checkin-life-areas-toggle').isHidden();
-  check('"Rate more life areas" toggle hides again once nothing remains to expand', expandHiddenAgainAfterRestore);
 
-  // ---------- v2.3.1 fix: a disabled CORE area (mental/emotional/physical) must also
-  // land in the "Rate more life areas" expander, not vanish entirely. Row = every
-  // enabled dim (core-fixed-order first, then enabled extras); expander = every
-  // disabled dim, core or not -- the two sets are always disjoint. ----------
-  await openSettings();
   const mentalToggle = page.locator('.dim-row', { hasText: 'Mental' }).locator('.dim-toggle');
   await mentalToggle.evaluate((el) => { el.checked = false; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('today');
   const mentalGoneFromRowCount = await page.locator('#checkin-health-row .hslider__track[aria-label="Mental"]').count();
-  check('turning off a CORE area (Mental) in Settings removes it from the always-visible row', mentalGoneFromRowCount === 0, `count=${mentalGoneFromRowCount}`);
-  await page.click('#checkin-life-areas-toggle');
-  await page.waitForTimeout(200);
-  const mentalInExpandCount = await page.locator('#checkin-health-row-expand .hslider__track[aria-label="Mental"]').count();
-  check('turning off a CORE area (Mental) still leaves it reachable in the expand-group (not vanished)', mentalInExpandCount === 1, `count=${mentalInExpandCount}`);
-  const rowExpandOverlap = await page.evaluate(() => {
-    const rowKeys = Array.from(document.querySelectorAll('#checkin-health-row .hslider__track')).map((t) => t.getAttribute('aria-label'));
-    const expandKeys = Array.from(document.querySelectorAll('#checkin-health-row-expand .hslider__track')).map((t) => t.getAttribute('aria-label'));
-    return rowKeys.filter((k) => expandKeys.includes(k));
-  });
-  check('always-visible row and expander never share a dim (disjoint enabled/disabled sets)', rowExpandOverlap.length === 0, JSON.stringify(rowExpandOverlap));
-  await page.click('#checkin-life-areas-toggle');
-  await page.waitForTimeout(150);
+  check('turning off a CORE area (Mental) in Settings removes it from the check-in (only 2 core sliders left)', mentalGoneFromRowCount === 0, `count=${mentalGoneFromRowCount}`);
+  const checkinTracksWithMentalOff = await page.locator('#checkin-health-row .hslider__track').count();
+  check('no expander exists to fall back into -- the disabled core area is simply gone', checkinTracksWithMentalOff === 2, `count=${checkinTracksWithMentalOff}`);
   await openSettings();
   await mentalToggle.evaluate((el) => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.waitForTimeout(150);
   await gotoTab('today');
   const mentalBackCount = await page.locator('#checkin-health-row .hslider__track[aria-label="Mental"]').count();
-  check('turning Mental back on in Settings restores it to the always-visible row', mentalBackCount === 1, `count=${mentalBackCount}`);
+  check('turning Mental back on in Settings restores it to the check-in', mentalBackCount === 1, `count=${mentalBackCount}`);
   await openSettings();
 
   // ---------- AMOLED theme check (not a required screenshot, just a functional check) ----------
@@ -795,13 +760,10 @@ async function main() {
   const persistedTagCount = await page.locator('#w-checkin .emo-pill').count();
   check('emotion tags persisted after reload', persistedTagCount >= 1, `count=${persistedTagCount}`);
 
-  // v2.3 -- life-area ratings (Finances, Spirit) persisted across reload. Both dims are
-  // enabled in Settings (restored above), so they're in the always-visible row now, not
-  // behind the expander.
-  const financeValueAfterReload = (await page.locator('#checkin-health-row .hslider:has(.hslider__track[aria-label="Finances"]) .hslider__value').innerText()).trim();
-  const spiritValueAfterReload = (await page.locator('#checkin-health-row .hslider:has(.hslider__track[aria-label="Spirit"]) .hslider__value').innerText()).trim();
-  check('Finances rating persisted after reload', financeValueAfterReload === financeValueText, `before=${financeValueText} after=${financeValueAfterReload}`);
-  check('Spirit rating persisted after reload', spiritValueAfterReload === spiritValueText, `before=${spiritValueText} after=${spiritValueAfterReload}`);
+  // v2.6.2 -- core-dim rating (Physical) persisted across reload. Finances/Spirit are no
+  // longer part of the check-in at all, so there's nothing of theirs left to persist here.
+  const physicalValueAfterReload = (await page.locator('#checkin-health-row .hslider:has(.hslider__track[aria-label="Physical"]) .hslider__value').innerText()).trim();
+  check('Physical rating persisted after reload', physicalValueAfterReload === physicalValueText, `before=${physicalValueText} after=${physicalValueAfterReload}`);
 
   await gotoTab('journal');
   await page.click('.segmented__btn[data-segment="beliefs"]');

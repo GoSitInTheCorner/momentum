@@ -42,11 +42,11 @@ export async function renderTasks(root, { pendingAction } = {}) {
       </section>
 
       <section class="card">
-        <button type="button" class="checkin-toggle" id="history-toggle" aria-expanded="false">
+        <button type="button" class="checkin-toggle is-open" id="history-toggle" aria-expanded="true">
           <span>Done &amp; thoughts (<span id="history-count">0</span>)</span>
           <span class="checkin-toggle__chevron" aria-hidden="true">&#9662;</span>
         </button>
-        <div class="checkin-body" id="history-body" hidden>
+        <div class="checkin-body" id="history-body">
           <ul class="log-list" id="history-list"></ul>
         </div>
       </section>

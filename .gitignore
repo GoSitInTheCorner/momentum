@@ -1,5 +1,7 @@
 node_modules/
 server.log
 screenshots/testrun.log
+screenshots/*.png
+scripts/_shots/
 .DS_Store
 Thumbs.db
