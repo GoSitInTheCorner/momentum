@@ -791,8 +791,6 @@ a.news-widget__item:active { opacity: 0.7; }
 .home-tasklist__row:last-child { border-bottom: none; }
 .home-tasklist__text { flex: 1 1 auto; font-size: calc(15px * var(--font-scale)); min-width: 0; overflow-wrap: anywhere; }
 .home-tasklist__row.is-done .home-tasklist__text { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--accent); }
-.home-tasklist-add { display: flex; gap: 8px; margin-top: 10px; }
-.home-tasklist-add .text-field { flex: 1 1 auto; }
 
 /* Words to sit with -- 3 antonym pairs, no definitions, each word tappable -> look-up
    below (v2.2, replaces the single word-of-the-day). */
