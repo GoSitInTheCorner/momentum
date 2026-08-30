@@ -168,18 +168,68 @@ async function main() {
   const noTextareaOnHome = await page.locator('.view--today textarea').count();
   check('Home has no full-text journal entry surface (no textarea)', noTextareaOnHome === 0, `count=${noTextareaOnHome}`);
 
-  // v2.2 -- compact "Today's tasks" card: view, check off, quick-add inline.
+  // v2.6.1 -- Home's "Today's tasks" is now a real quick-capture (+Task / Did it /
+  // Thought), the exact same three-button pattern as the Tasks tab, and the card
+  // itself moved above the calendar/check-in (see docs/SPEC.md v2.6.1 -- the
+  // launchpad now leads with task capture instead of the mood check-in).
   const homeTaskCard = await page.locator('#w-tasks .home-tasklist').count();
-  check('Home shows the compact "Today\'s tasks" card', homeTaskCard === 1, `count=${homeTaskCard}`);
+  check('Home shows the "Today\'s tasks" card', homeTaskCard === 1, `count=${homeTaskCard}`);
+  const homeCaptureButtons = await page.locator('#w-tasks .task-capture__actions .chip-btn').count();
+  check('Home tasks capture has all three buttons (+Task / Did it / Thought)', homeCaptureButtons === 3, `count=${homeCaptureButtons}`);
+
+  const tasksBeforeCheckin = await page.evaluate(() => {
+    const tasks = document.querySelector('#w-tasks');
+    const checkin = document.querySelector('#w-checkin');
+    return !!(tasks && checkin && (tasks.compareDocumentPosition(checkin) & Node.DOCUMENT_POSITION_FOLLOWING));
+  });
+  check('Today reorder: tasks/capture card now sits before the check-in card (which moved below the calendar)', tasksBeforeCheckin);
+
   await page.fill('#home-tasklist-input', 'Home quick add task');
-  await page.click('#home-tasklist-add-btn');
+  await page.click('#home-tasklist-task-btn');
   await page.waitForTimeout(250);
   const homeTaskRows = await page.locator('.home-tasklist__row').count();
-  check('quick-add on Home creates a to-do', homeTaskRows === 1, `count=${homeTaskRows}`);
+  check('+Task on Home creates an open to-do', homeTaskRows === 1, `count=${homeTaskRows}`);
+  const homeInputClearedAfterTask = await page.inputValue('#home-tasklist-input');
+  check('Home capture input clears after +Task', homeInputClearedAfterTask === '', JSON.stringify(homeInputClearedAfterTask));
+
   await page.click('.home-tasklist__row >> nth=0 >> .task-check');
   await page.waitForTimeout(700);
   const homeTaskDone = await page.locator('.home-tasklist__row.is-done').count();
   check('checking off a to-do on Home works', homeTaskDone === 1, `count=${homeTaskDone}`);
+
+  // "Did it" writes a completed task directly (addDoneTask) -- it never shows up in the
+  // open-tasks list, so verify the actual Dexie record via window.__momentumDb instead of
+  // the DOM. Clean the record up right after so it doesn't shift the Tasks-tab history
+  // counts asserted later in this run.
+  await page.fill('#home-tasklist-input', 'Shipped the Home capture rework');
+  await page.click('#home-tasklist-did-btn');
+  await page.waitForTimeout(250);
+  const homeDoneRecord = await page.evaluate(async () => {
+    const db = window.__momentumDb;
+    const all = await db.tasks.toArray();
+    const t = all.find((x) => x.text === 'Shipped the Home capture rework');
+    if (!t) return null;
+    await db.tasks.delete(t.id);
+    return { date: t.date, done: t.done };
+  });
+  check('"Did it" on Home writes a completed task record with the right date/text (verified via window.__momentumDb)', !!homeDoneRecord && homeDoneRecord.done === true && homeDoneRecord.date === dateNDaysAgo(0), JSON.stringify(homeDoneRecord));
+  const homeHintAfterDidIt = await page.locator('#home-tasklist-hint').innerText();
+  check('Home capture shows a save confirmation after "Did it"', /Saved/.test(homeHintAfterDidIt), homeHintAfterDidIt);
+
+  // "Thought" writes a logItem, not a task -- same window.__momentumDb verification +
+  // cleanup approach.
+  await page.fill('#home-tasklist-input', 'Maybe reorder Home again someday');
+  await page.click('#home-tasklist-thought-btn');
+  await page.waitForTimeout(250);
+  const homeThoughtRecord = await page.evaluate(async () => {
+    const db = window.__momentumDb;
+    const all = await db.logItems.toArray();
+    const l = all.find((x) => x.text === 'Maybe reorder Home again someday');
+    if (!l) return null;
+    await db.logItems.delete(l.id);
+    return { date: l.date, type: l.type };
+  });
+  check('"Thought" on Home writes a thought logItem with the right date/text (verified via window.__momentumDb)', !!homeThoughtRecord && homeThoughtRecord.type === 'thought' && homeThoughtRecord.date === dateNDaysAgo(0), JSON.stringify(homeThoughtRecord));
 
   // ---------------- "How are you today?" check-in (v2.6 -- moved here from the
   // Journal hub; always visible now, no collapsible toggle, no done/learned log). ------
@@ -187,8 +237,13 @@ async function main() {
   // value. Verify the shared autosave badge also flashes on a slider change. All 8
   // non-core areas were already enabled in Settings above, so they're already in the
   // always-visible row too -- 11 tracks total, not just the core 3.
+  // v2.6.1 -- the check-in card moved further down the page (below tasks + calendar),
+  // so these sliders are no longer guaranteed to start in-viewport; scroll each into
+  // view first (as the Finances/Spirit/etc. sliders below already do) or a raw
+  // page.mouse.click() at an off-screen boundingBox() misses the element entirely.
   const checkinSliders = await page.locator('#checkin-health-row .hslider__track').all();
   for (const slider of checkinSliders) {
+    await slider.scrollIntoViewIfNeeded();
     const box = await slider.boundingBox();
     await page.mouse.click(box.x + box.width * 0.8, box.y + box.height / 2);
     await page.waitForTimeout(150);

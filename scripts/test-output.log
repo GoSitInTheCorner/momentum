@@ -2,10 +2,16 @@ PASS -- Settings has all 8 home-widget toggles :: count=8
 PASS -- Settings has all 11 health-dim toggles :: count=11
 PASS -- no horizontal overflow (home-initial) :: scrollWidth=402
 PASS -- Home has no full-text journal entry surface (no textarea) :: count=0
-PASS -- Home shows the compact "Today's tasks" card :: count=1
-PASS -- quick-add on Home creates a to-do :: count=1
+PASS -- Home shows the "Today's tasks" card :: count=1
+PASS -- Home tasks capture has all three buttons (+Task / Did it / Thought) :: count=3
+PASS -- Today reorder: tasks/capture card now sits before the check-in card (which moved below the calendar)
+PASS -- +Task on Home creates an open to-do :: count=1
+PASS -- Home capture input clears after +Task :: ""
 PASS -- checking off a to-do on Home works :: count=1
-PASS -- all 11 always-visible health sliders set on the Today check-in (core 3 + every enabled life area) :: ["6","6","6","6","6","6","6","6","8","8","8"]
+PASS -- "Did it" on Home writes a completed task record with the right date/text (verified via window.__momentumDb) :: {"date":"2026-08-29","done":true}
+PASS -- Home capture shows a save confirmation after "Did it" :: Saved ✓
+PASS -- "Thought" on Home writes a thought logItem with the right date/text (verified via window.__momentumDb) :: {"date":"2026-08-29","type":"thought"}
+PASS -- all 11 always-visible health sliders set on the Today check-in (core 3 + every enabled life area) :: ["8","8","8","8","8","8","6","8","8","8","8"]
 PASS -- "Saved" indicator also flashes on a check-in slider change :: Saved ✓
 PASS -- all 11 sliders show immediately once every life area is enabled in Settings :: count=11
 PASS -- "Rate more life areas" toggle hides once nothing remains to expand
@@ -20,11 +26,11 @@ MOON SIGN
 Pisces
 curious and quick-witted, energized by conversation
 MOON TODAY
-🌕 Full Moon
+🌖 Waning Gibbous
 
 Moon sign is approximate.
 
-Daily horosco
+Daily ho
 PASS -- astrology shows a moon phase :: Astrology
 SUN SIGN
 Gemini
@@ -32,11 +38,11 @@ MOON SIGN
 Pisces
 curious and quick-witted, energized by conversation
 MOON TODAY
-🌕 Full Moon
+🌖 Waning Gibbous
 
 Moon sign is approximate.
 
-Daily horosco
+Daily ho
 PASS -- astrology shows a Moon sign (v2.2) :: Pisces
 PASS -- astrology shows the disabled horoscope slot
 PASS -- weather widget resolves to content or hides gracefully (no stuck skeleton)
@@ -111,7 +117,7 @@ PASS -- turning Mental back on in Settings restores it to the always-visible row
 PASS -- AMOLED theme applies true-black background :: #000000
 PASS -- passcode lock engages on reload when enabled :: overlay count=1
 PASS -- correct passcode unlocks the app
-PASS -- export backup produced a downloadable file :: C:\Users\User\AppData\Local\Temp\playwright-artifacts-CmbOaP\6d2623af-0d56-4161-b27c-8135939df16f
+PASS -- export backup produced a downloadable file :: C:\Users\User\AppData\Local\Temp\playwright-artifacts-dTAbFl\647805fa-3096-4773-92b6-44a6e0ebf397
 PASS -- open tasks persisted after reload (Tasks tab "To do") :: count=1
 PASS -- the past-dated open task is still in "To do" after reload (persistence, no carryover step needed) :: Aug 26
 PASS -- "Done & thoughts" count persisted after reload :: 4
@@ -152,4 +158,4 @@ PASS -- zero console errors across full run
 PASS -- every external request targets the allowlisted keyless APIs
 
 === SUMMARY ===
-125/125 checks passed
+131/131 checks passed

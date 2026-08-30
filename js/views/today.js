@@ -6,8 +6,8 @@
 // (goals/milestones). See docs/SPEC.md "v2 -- Home as an inviting launchpad" + "v2.2"/"v2.6".
 import { todayStr, addDays } from '../db.js';
 import {
-  getSettings, getTasksForDate, getActivityStreak, getDay, saveDay, addTask, toggleTask,
-  getAssessmentCount, getDoneTasks, getThoughts,
+  getSettings, getTasksForDate, getActivityStreak, getDay, saveDay, addTask, addDoneTask,
+  addThought, toggleTask, getAssessmentCount, getDoneTasks, getThoughts,
 } from '../store.js';
 import { createHomeCalendar } from '../components/homecalendar.js';
 import { createHealthSlider } from '../components/slider.js';
@@ -100,14 +100,14 @@ export async function renderToday(root) {
     <div class="scroll-area">
       <section class="card home-widget home-widget--recap" id="w-recap" hidden></section>
 
-      <section class="card home-widget home-widget--checkin" id="w-checkin" ${w.checkin ? '' : 'hidden'}></section>
-
       <section class="card home-widget home-widget--tasks" id="w-tasks" ${w.todayTasks ? '' : 'hidden'}></section>
 
       <section class="card home-widget home-widget--calendar" id="w-calendar" ${w.calendar ? '' : 'hidden'}>
         <div class="card__title-row"><h2 class="card__title">Your month</h2></div>
         <div id="home-cal-mount"></div>
       </section>
+
+      <section class="card home-widget home-widget--checkin" id="w-checkin" ${w.checkin ? '' : 'hidden'}></section>
 
       <section class="card home-widget home-widget--assessment" id="w-assessment" hidden></section>
 
@@ -401,19 +401,35 @@ function renderAstroWidget(el, settings) {
 // reusing components/tasklist.js's createTaskSection: no drag-reorder or goal-link
 // chip here (those stay on the Tasks tab) -- distinct `home-tasklist` classes so this
 // never collides with `.task-list`/`.task-row` styling or selectors used elsewhere.
+// v2.6.1 -- promoted to a real quick-capture (the launchpad now leads with it, see
+// renderToday's reordered template): reuses the exact Tasks-tab capture pattern
+// (`.task-capture__actions` + the three `.chip-btn` variants + the shared
+// `wireAutosave` badge from components/savebadge.js) so +Task/Did it/Thought behave
+// and look identical here as on the Tasks tab. The capture markup + badge are mounted
+// ONCE and never wiped by a redraw -- only the list below (`drawList()`) re-renders on
+// add/toggle, so the "Saved ✓" fade is never cut short by its own container refreshing.
 async function renderTasksWidget(el, date) {
-  async function draw() {
+  el.innerHTML = `
+    <div class="card__title-row"><h2 class="card__title">Today's tasks</h2></div>
+    <input type="text" class="text-field" id="home-tasklist-input" placeholder="Add a task, a win, or a thought..." />
+    <div class="task-capture__actions">
+      <button type="button" class="chip-btn" id="home-tasklist-task-btn">+ Task</button>
+      <button type="button" class="chip-btn chip-btn--done" id="home-tasklist-did-btn">&#10003; Did it</button>
+      <button type="button" class="chip-btn chip-btn--learned" id="home-tasklist-thought-btn">~ Thought</button>
+    </div>
+    <div class="autosave-hint" id="home-tasklist-hint">&nbsp;</div>
+    <ul class="home-tasklist" id="home-tasklist"></ul>
+    <p class="empty-hint" id="home-tasklist-empty" hidden>Nothing yet — add a task above.</p>
+    <a href="#/tasks" class="settings-hint" style="display:block;margin-top:8px;text-decoration:none;">See all in Tasks &rarr;</a>
+  `;
+  const badge = wireAutosave(el.querySelector('#home-tasklist-hint'));
+  const listEl = el.querySelector('#home-tasklist');
+  const emptyEl = el.querySelector('#home-tasklist-empty');
+  const input = el.querySelector('#home-tasklist-input');
+
+  async function drawList() {
     const tasks = await getTasksForDate(date);
-    el.innerHTML = `
-      <div class="card__title-row"><h2 class="card__title">Today's tasks</h2></div>
-      <ul class="home-tasklist" id="home-tasklist"></ul>
-      <p class="empty-hint" id="home-tasklist-empty" ${tasks.length ? 'hidden' : ''}>Nothing yet — add a task below.</p>
-      <div class="home-tasklist-add">
-        <input type="text" class="text-field" id="home-tasklist-input" placeholder="Add a task..." />
-        <button class="chip-btn" id="home-tasklist-add-btn">+ Add</button>
-      </div>
-    `;
-    const listEl = el.querySelector('#home-tasklist');
+    emptyEl.hidden = tasks.length > 0;
     listEl.innerHTML = tasks.map((t) => `
       <li class="home-tasklist__row ${t.done ? 'is-done' : ''}" data-id="${t.id}">
         <button class="task-check" aria-label="Toggle done"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -425,21 +441,29 @@ async function renderTasksWidget(el, date) {
         row.classList.add('is-animating');
         const done = await toggleTask(Number(row.dataset.id));
         row.classList.toggle('is-done', done);
-        setTimeout(() => draw(), done ? 550 : 0);
+        setTimeout(() => drawList(), done ? 550 : 0);
       });
     });
-    const input = el.querySelector('#home-tasklist-input');
-    async function submitAdd() {
-      const text = input.value.trim();
-      if (!text) return;
-      await addTask(date, text);
-      draw();
-    }
-    el.querySelector('#home-tasklist-add-btn').addEventListener('click', submitAdd);
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitAdd(); } });
   }
+
+  // +Task/Did it/Thought all funnel through the same trim-and-clear submit, differing
+  // only in which store.js writer they call -- exactly the Tasks-tab capture's contract.
+  async function submitWith(addFn) {
+    const text = input.value.trim();
+    if (!text) return;
+    badge.saving();
+    await addFn(date, text);
+    badge.saved();
+    input.value = '';
+    drawList();
+  }
+  el.querySelector('#home-tasklist-task-btn').addEventListener('click', () => submitWith(addTask));
+  el.querySelector('#home-tasklist-did-btn').addEventListener('click', () => submitWith(addDoneTask));
+  el.querySelector('#home-tasklist-thought-btn').addEventListener('click', () => submitWith(addThought));
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); submitWith(addTask); } });
+
   try {
-    await draw();
+    await drawList();
   } catch (err) {
     console.warn('today\'s-tasks widget failed', err);
     el.hidden = true; el.innerHTML = '';
