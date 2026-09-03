@@ -770,6 +770,13 @@ a.news-widget__item:active { opacity: 0.7; }
 .home-tasklist__row:last-child { border-bottom: none; }
 .home-tasklist__text { flex: 1 1 auto; font-size: calc(15px * var(--font-scale)); min-width: 0; overflow-wrap: anywhere; }
 .home-tasklist__row.is-done .home-tasklist__text { color: var(--ink-2); text-decoration: line-through; text-decoration-color: var(--accent); }
+/* Due badge -- top-3-across-all-dates widget (v2.7), mirrors .task-date's chip
+   language (muted, pill, no border) so the two "due" surfaces read as one system. */
+.home-tasklist__due {
+  flex: 0 0 auto; font-size: calc(11px * var(--font-scale)); color: var(--ink-2); background: var(--bg-2);
+  padding: 4px 9px; border-radius: 999px; white-space: nowrap;
+}
+.home-tasklist__due--overdue { color: var(--danger); background: transparent; }
 
 /* Words to sit with -- 3 antonym pairs, no definitions, each word tappable -> look-up
    below (v2.2, replaces the single word-of-the-day). */

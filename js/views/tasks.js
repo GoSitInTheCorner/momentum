@@ -7,11 +7,108 @@
 // old drag/carryover/goal-link implementation) is now unused by anything and removed.
 import {
   getSettings, getOpenTasks, getDoneTasks, addTask, addDoneTask, toggleTask, deleteTask,
-  addThought, getThoughts, deleteLogItem,
+  addThought, getThoughts, deleteLogItem, updateTask,
 } from '../store.js';
 import { todayStr } from '../db.js';
-import { escapeHtml, formatDate } from '../util.js';
+import { escapeHtml, formatDate, formatDue } from '../util.js';
 import { wireAutosave } from '../components/savebadge.js';
+import { openFormSheet } from '../components/sheet.js';
+
+// Due-date picker sheet (v2.7) -- opened from the Tasks-tab date chip. Reuses the
+// segmented-control markup/wiring pattern from views/settings.js's segButtons() (not
+// imported -- that helper is private to settings.js, so this is a small inline copy)
+// rather than inventing new markup.
+const DUE_MODES = [
+  { id: 'datetime', label: 'Date & time' },
+  { id: 'year', label: 'Year' },
+  { id: 'life', label: 'Life goal' },
+  { id: 'date', label: 'Date' },
+];
+
+function openDuePicker(task, settings, onSaved) {
+  const currentYear = new Date().getFullYear();
+  const initialKind = task.dueKind || 'date';
+
+  openFormSheet({
+    title: 'Set due date',
+    mount(body, close) {
+      body.innerHTML = `
+        <div class="segmented segmented--settings" id="due-mode-seg">
+          ${DUE_MODES.map((o) => `<button type="button" class="segmented__btn ${o.id === initialKind ? 'is-active' : ''}" data-val="${o.id}">${o.label}</button>`).join('')}
+        </div>
+        <div id="due-fields"></div>
+        <button class="btn btn--primary" id="due-save">Save</button>
+      `;
+      const seg = body.querySelector('#due-mode-seg');
+      const fieldsEl = body.querySelector('#due-fields');
+      let mode = initialKind;
+
+      function renderFields() {
+        if (mode === 'datetime') {
+          // Carry over the task's existing calendar date when switching from plain
+          // "date" (or a legacy no-dueKind record) into "date & time" -- only fall
+          // back to today when the current date is a year/life sentinel, which isn't
+          // a real date to prefill from.
+          const d = (task.dueKind === 'datetime' || task.dueKind === 'date' || !task.dueKind) ? task.date : todayStr();
+          const t = task.dueKind === 'datetime' ? (task.dueTime || '') : '';
+          fieldsEl.innerHTML = `
+            <label class="field-label">Date</label>
+            <input type="date" class="text-field" id="due-date" value="${d}" />
+            <label class="field-label">Time</label>
+            <input type="time" class="text-field" id="due-time" value="${t}" />
+          `;
+        } else if (mode === 'year') {
+          const y = task.dueKind === 'year' && task.dueYear ? task.dueYear : currentYear;
+          const years = [];
+          for (let yy = currentYear; yy <= currentYear + 30; yy++) years.push(yy);
+          fieldsEl.innerHTML = `
+            <label class="field-label">Year</label>
+            <select class="text-field" id="due-year">
+              ${years.map((yy) => `<option value="${yy}" ${yy === y ? 'selected' : ''}>${yy}</option>`).join('')}
+            </select>
+          `;
+        } else if (mode === 'life') {
+          fieldsEl.innerHTML = '<p class="empty-hint">No date needed -- this is a someday/life goal task.</p>';
+        } else {
+          const d = (task.dueKind === 'date' || !task.dueKind) ? task.date : todayStr();
+          fieldsEl.innerHTML = `
+            <label class="field-label">Date</label>
+            <input type="date" class="text-field" id="due-date" value="${d}" />
+          `;
+        }
+      }
+      renderFields();
+
+      seg.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-val]');
+        if (!btn) return;
+        mode = btn.dataset.val;
+        seg.querySelectorAll('.segmented__btn').forEach((b) => b.classList.toggle('is-active', b === btn));
+        renderFields();
+      });
+
+      body.querySelector('#due-save').addEventListener('click', async () => {
+        let patch;
+        if (mode === 'datetime') {
+          const val = body.querySelector('#due-date').value || todayStr();
+          const time = body.querySelector('#due-time').value || null;
+          patch = { dueKind: 'datetime', date: val, dueTime: time, dueYear: null };
+        } else if (mode === 'year') {
+          const y = Number(body.querySelector('#due-year').value);
+          patch = { dueKind: 'year', date: `${y}-12-31`, dueYear: y, dueTime: null };
+        } else if (mode === 'life') {
+          patch = { dueKind: 'life', date: '9999-12-31', dueTime: null, dueYear: null };
+        } else {
+          const val = body.querySelector('#due-date').value || todayStr();
+          patch = { dueKind: 'date', date: val, dueTime: null, dueYear: null };
+        }
+        await updateTask(task.id, patch);
+        close();
+        onSaved();
+      });
+    },
+  });
+}
 
 export async function renderTasks(root, { pendingAction } = {}) {
   const date = todayStr();
@@ -74,7 +171,7 @@ export async function renderTasks(root, { pendingAction } = {}) {
         <li class="task-row" data-id="${t.id}">
           <button class="task-check" aria-label="Toggle done"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           <span class="task-row__text">${escapeHtml(t.text)}</span>
-          <span class="task-date">${escapeHtml(dateLabel(t.date))}</span>
+          <button type="button" class="task-date" data-id="${t.id}">${escapeHtml(formatDue(t, settings))}</button>
           <button class="task-delete" aria-label="Delete">&times;</button>
         </li>
       `).join('');
@@ -87,6 +184,11 @@ export async function renderTasks(root, { pendingAction } = {}) {
           badge.saved();
           row.classList.toggle('is-done', done);
           setTimeout(refreshAll, done ? 550 : 0);
+        });
+        row.querySelector('.task-date').addEventListener('click', (e) => {
+          e.stopPropagation();
+          const t = tasks.find((x) => x.id === id);
+          if (t) openDuePicker(t, settings, refreshAll);
         });
         row.querySelector('.task-delete').addEventListener('click', async (e) => {
           e.stopPropagation();

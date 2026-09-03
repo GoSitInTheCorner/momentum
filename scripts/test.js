@@ -193,9 +193,16 @@ async function main() {
   check('Home capture input clears after +Task', homeInputClearedAfterTask === '', JSON.stringify(homeInputClearedAfterTask));
 
   await page.click('.home-tasklist__row >> nth=0 >> .task-check');
-  await page.waitForTimeout(700);
-  const homeTaskDone = await page.locator('.home-tasklist__row.is-done').count();
-  check('checking off a to-do on Home works', homeTaskDone === 1, `count=${homeTaskDone}`);
+  await page.waitForTimeout(150);
+  const homeTaskDoneImmediately = await page.locator('.home-tasklist__row.is-done').count();
+  check('checking off a to-do on Home shows the done state immediately (pre-redraw)', homeTaskDoneImmediately === 1, `count=${homeTaskDoneImmediately}`);
+  await page.waitForTimeout(600);
+  // v2.7 -- the widget now lists top-3 OPEN tasks only (getOpenTasks()), same contract
+  // as the Tasks tab's own "To do" list, so a completed task drops out of the list on
+  // the post-toggle redraw instead of lingering struck-through (matches the Tasks tab's
+  // own "checking a task off removes it from To-do" behavior, asserted later in this file).
+  const homeTaskDoneAfterRedraw = await page.locator('.home-tasklist__row.is-done').count();
+  check('checking off a to-do on Home removes it from the (open-tasks-only) list on redraw', homeTaskDoneAfterRedraw === 0, `count=${homeTaskDoneAfterRedraw}`);
 
   // "Did it" writes a completed task directly (addDoneTask) -- it never shows up in the
   // open-tasks list, so verify the actual Dexie record via window.__momentumDb instead of
@@ -494,6 +501,105 @@ async function main() {
   check('"Saved" indicator flashes after a task change', /Saved/.test(taskSavedFlash) || true); // best-effort -- badge may already have faded
   await screenshot('tasks-light.png');
   await overflowOK('tasks');
+
+  // ---------- 2a. Flexible due dates (v2.7): the due-date picker sheet (Date & time |
+  // Year | Life goal | Date) reachable from the Tasks-tab date chip, plus the Home
+  // widget's top-3-open-tasks-across-all-dates + due-badge rendering. All seed data
+  // here is added then deleted before the Goals section below, using the same
+  // add-then-delete isolation pattern already used above, so it never shifts the
+  // open-task/history counts asserted elsewhere in this run. ----------
+  const dueOverdueDate = dateNDaysAgo(5);
+  const dueTodayDate = dateNDaysAgo(0);
+  const dueSeed = await page.evaluate(async ({ overdueDate, today }) => {
+    const db = window.__momentumDb;
+    const overdueId = await db.tasks.add({ date: overdueDate, text: 'DueTest overdue errand', done: false, doneAt: null, goalId: null, order: 0 });
+    const yearId = await db.tasks.add({ date: '2099-12-31', dueKind: 'year', dueYear: 2099, text: 'DueTest far-future year goal', done: false, doneAt: null, goalId: null, order: 0 });
+    const lifeId = await db.tasks.add({ date: '9999-12-31', dueKind: 'life', text: 'DueTest someday life goal', done: false, doneAt: null, goalId: null, order: 0 });
+    // Old-style record with NO dueKind field at all -- what every pre-v2.7 task looks like.
+    const legacyId = await db.tasks.add({ date: today, text: 'DueTest legacy no-dueKind task', done: false, doneAt: null, goalId: null, order: 0 });
+    const pickerId = await db.tasks.add({ date: today, text: 'DueTest picker target', done: false, doneAt: null, goalId: null, order: 0 });
+    return { overdueId, yearId, lifeId, legacyId, pickerId };
+  }, { overdueDate: dueOverdueDate, today: dueTodayDate });
+
+  // Home widget: top 3 open tasks across ALL dates (not just today's), each with a due
+  // badge, including an overdue visual cue. getOpenTasks() sorts oldest-date-first, so
+  // the 5-days-ago and 3-days-ago tasks are guaranteed to land in the top 3 ahead of
+  // the year/life sentinel-dated tasks.
+  await gotoTab('today');
+  await page.waitForTimeout(250);
+  const homeDueRows = await page.locator('#home-tasklist .home-tasklist__row').count();
+  check('Home widget shows up to 3 open tasks across all dates (not just today)', homeDueRows === 3, `count=${homeDueRows}`);
+  const homeDueBadges = await page.locator('#home-tasklist .home-tasklist__due').allTextContents();
+  check('Home widget renders a due badge on every shown task', homeDueBadges.length === homeDueRows && homeDueBadges.every((t) => t.trim().length > 0), JSON.stringify(homeDueBadges));
+  const homeOverdueCount = await page.locator('#home-tasklist .home-tasklist__due--overdue').count();
+  check('Home widget flags at least one overdue task with the overdue visual cue', homeOverdueCount >= 1, `count=${homeOverdueCount}`);
+
+  await gotoTab('tasks');
+  await page.waitForTimeout(250);
+
+  // Year/life sentinel-dated tasks still render (not silently dropped) and sort to the
+  // end of the open list, after ordinary near-term dates.
+  const openDateChips = await page.locator('#open-task-list .task-date').allTextContents();
+  const yearIdx = openDateChips.findIndex((t) => t.trim() === '2099');
+  const lifeIdx = openDateChips.findIndex((t) => t.trim() === 'Someday');
+  check('year-kind task renders with its plain year number as the due chip', yearIdx !== -1, JSON.stringify(openDateChips));
+  check('life-kind task renders with "Someday" as the due chip', lifeIdx !== -1, JSON.stringify(openDateChips));
+  check('year and life sentinel-dated tasks sort to the end of the open list (visible, not dropped)', yearIdx !== -1 && lifeIdx !== -1 && yearIdx < lifeIdx && yearIdx >= openDateChips.length - 3, `yearIdx=${yearIdx} lifeIdx=${lifeIdx} total=${openDateChips.length}`);
+
+  // Old-style task record with no dueKind field at all -- must still render a normal
+  // date badge, never "Invalid Date", never crash.
+  const legacyRowText = await page.locator(`.task-row[data-id="${dueSeed.legacyId}"] .task-date`).innerText();
+  check('a legacy task record with no dueKind field renders a normal date badge (no "Invalid Date")', legacyRowText.trim().length > 0 && !/invalid/i.test(legacyRowText), legacyRowText);
+
+  // Due-date picker round trip: date -> datetime -> year -> life, driven entirely
+  // through the UI via the Tasks-tab date-chip button, on one task in sequence.
+  async function openDuePickerFor(taskId) {
+    await page.click(`.task-date[data-id="${taskId}"]`);
+    await page.waitForSelector('.sheet--form', { timeout: 3000 });
+  }
+  const pickerFutureDate = dateNDaysAgo(-10); // 10 days from now
+
+  await openDuePickerFor(dueSeed.pickerId);
+  const pickerTitle = await page.locator('.sheet--form .sheet__title').innerText();
+  check('due-date picker sheet opens with the "Set due date" title', pickerTitle.trim() === 'Set due date', pickerTitle);
+  await page.click('.segmented__btn[data-val="date"]');
+  await page.fill('#due-date', pickerFutureDate);
+  await page.click('#due-save');
+  await page.waitForTimeout(300);
+  let pickerChip = await page.locator(`.task-date[data-id="${dueSeed.pickerId}"]`).innerText();
+  check('due-date picker: "date" kind round-trips to the formatted date chip', pickerChip.trim().length > 0 && pickerChip.trim() !== 'Today' && !/invalid/i.test(pickerChip), pickerChip);
+
+  await openDuePickerFor(dueSeed.pickerId);
+  await page.click('.segmented__btn[data-val="datetime"]');
+  await page.fill('#due-date', pickerFutureDate);
+  await page.fill('#due-time', '14:00');
+  await page.click('#due-save');
+  await page.waitForTimeout(300);
+  pickerChip = await page.locator(`.task-date[data-id="${dueSeed.pickerId}"]`).innerText();
+  check('due-date picker: "datetime" kind round-trips to a chip showing the formatted time (timeFormat=12 -> "2:00 PM")', pickerChip.includes('2:00 PM'), pickerChip);
+
+  await openDuePickerFor(dueSeed.pickerId);
+  await page.click('.segmented__btn[data-val="year"]');
+  const pickerYear = new Date().getFullYear() + 7;
+  await page.selectOption('#due-year', String(pickerYear));
+  await page.click('#due-save');
+  await page.waitForTimeout(300);
+  pickerChip = await page.locator(`.task-date[data-id="${dueSeed.pickerId}"]`).innerText();
+  check('due-date picker: "year" kind round-trips to the plain year number', pickerChip.trim() === String(pickerYear), pickerChip);
+
+  await openDuePickerFor(dueSeed.pickerId);
+  await page.click('.segmented__btn[data-val="life"]');
+  await page.click('#due-save');
+  await page.waitForTimeout(300);
+  pickerChip = await page.locator(`.task-date[data-id="${dueSeed.pickerId}"]`).innerText();
+  check('due-date picker: "life goal" kind round-trips to "Someday"', pickerChip.trim() === 'Someday', pickerChip);
+
+  // Clean up every task seeded in this block so downstream open-task/history counts
+  // (Goals section onward, incl. the reload-persistence check) are unaffected.
+  await page.evaluate(async (ids) => {
+    const db = window.__momentumDb;
+    await Promise.all(ids.map((id) => db.tasks.delete(id)));
+  }, [dueSeed.overdueId, dueSeed.yearId, dueSeed.lifeId, dueSeed.legacyId, dueSeed.pickerId]);
 
   // ---------- 2b. Goals: goals/milestones only (to-do list moved to Tasks in v2.2) ----------
   await gotoTab('goals');

@@ -6,7 +6,7 @@
 // (goals/milestones). See docs/SPEC.md "v2 -- Home as an inviting launchpad" + "v2.2"/"v2.6".
 import { todayStr, addDays } from '../db.js';
 import {
-  getSettings, getTasksForDate, getActivityStreak, getDay, saveDay, addTask, addDoneTask,
+  getSettings, getTasksForDate, getOpenTasks, getActivityStreak, getDay, saveDay, addTask, addDoneTask,
   addThought, toggleTask, getAssessmentCount, getDoneTasks, getThoughts,
 } from '../store.js';
 import { createHomeCalendar } from '../components/homecalendar.js';
@@ -19,7 +19,7 @@ import { pairsForDate } from '../services/wordpairs.js';
 import { lookupWord } from '../services/dictionary.js';
 import { moonSignFor } from '../services/moon.js';
 import { promptsForToday } from './journal.js';
-import { escapeHtml, formatWeekday } from '../util.js';
+import { escapeHtml, formatWeekday, formatDue } from '../util.js';
 
 // Core mood trio: always rendered first, in this exact order, regardless of the
 // stored healthDims array order (v2.1 -- Burchard's 10 Life Areas). Moved here from
@@ -142,7 +142,7 @@ export async function renderToday(root) {
   if (w.news) renderNewsWidget(view.querySelector('#w-news'), settings);
   if (w.wordOfDay) renderWordWidget(view.querySelector('#w-word'), date);
   if (w.astrology) renderAstroWidget(view.querySelector('#w-astro'), settings);
-  if (w.todayTasks) renderTasksWidget(view.querySelector('#w-tasks'), date);
+  if (w.todayTasks) renderTasksWidget(view.querySelector('#w-tasks'), date, settings);
   if (w.checkin) renderCheckinWidget(view.querySelector('#w-checkin'), settings, date);
   if (w.atAGlance) renderGlanceWidget(view.querySelector('#w-glance'), settings, date);
   if (w.yesterdayRecap !== false) renderRecapWidget(view.querySelector('#w-recap'), settings, date);
@@ -408,7 +408,7 @@ function renderAstroWidget(el, settings) {
 // and look identical here as on the Tasks tab. The capture markup + badge are mounted
 // ONCE and never wiped by a redraw -- only the list below (`drawList()`) re-renders on
 // add/toggle, so the "Saved ✓" fade is never cut short by its own container refreshing.
-async function renderTasksWidget(el, date) {
+async function renderTasksWidget(el, date, settings) {
   el.innerHTML = `
     <div class="card__title-row"><h2 class="card__title">Today's tasks</h2></div>
     <input type="text" class="text-field" id="home-tasklist-input" placeholder="Add a task, a win, or a thought..." />
@@ -427,15 +427,24 @@ async function renderTasksWidget(el, date) {
   const emptyEl = el.querySelector('#home-tasklist-empty');
   const input = el.querySelector('#home-tasklist-input');
 
+  // v2.7 -- top 3 open tasks across ALL dates (not just today's), each carrying a due
+  // badge, so the Home widget surfaces what's actually next instead of only what's
+  // dated today. getOpenTasks() is already sorted oldest-first (see store.js), so
+  // slicing the first 3 gives the most overdue/soonest-due tasks.
   async function drawList() {
-    const tasks = await getTasksForDate(date);
-    emptyEl.hidden = tasks.length > 0;
-    listEl.innerHTML = tasks.map((t) => `
+    const open = await getOpenTasks();
+    const tasks = open.slice(0, 3);
+    emptyEl.hidden = open.length > 0;
+    listEl.innerHTML = tasks.map((t) => {
+      const isOverdue = t.date < todayStr() && t.dueKind !== 'life' && t.dueKind !== 'year';
+      return `
       <li class="home-tasklist__row ${t.done ? 'is-done' : ''}" data-id="${t.id}">
         <button class="task-check" aria-label="Toggle done"><svg viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4.5 4.5L19 7.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <span class="home-tasklist__text">${escapeHtml(t.text)}</span>
+        <span class="home-tasklist__due ${isOverdue ? 'home-tasklist__due--overdue' : ''}">${escapeHtml(formatDue(t, settings))}</span>
       </li>
-    `).join('');
+    `;
+    }).join('');
     listEl.querySelectorAll('.home-tasklist__row').forEach((row) => {
       row.querySelector('.task-check').addEventListener('click', async () => {
         row.classList.add('is-animating');

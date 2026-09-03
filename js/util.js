@@ -1,4 +1,6 @@
 // util.js — small shared helpers with no other dependencies, used across views.
+import { todayStr } from './db.js';
+
 export function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str ?? '';
@@ -17,6 +19,33 @@ export function formatDate(dateStr, format = 'MMM D') {
 export function formatWeekday(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+// 'HH:MM' 24h -> '2:00 PM' style 12h string. Never throws on malformed input --
+// falls back to the raw string so a bad dueTime degrades gracefully instead of crashing.
+export function to12h(hhmm) {
+  if (typeof hhmm !== 'string') return '';
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return hhmm;
+  let h = Number(m[1]);
+  const min = m[2];
+  if (h > 23 || h < 0) return hhmm;
+  const suffix = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}:${min} ${suffix}`;
+}
+
+// Renders a task's due date/time per its dueKind, respecting the user's date/time
+// display settings. Robust to old records with no dueKind at all (treated as 'date').
+export function formatDue(task, settings) {
+  const kind = task.dueKind || 'date';
+  if (kind === 'life') return 'Someday';
+  if (kind === 'year') return String(task.dueYear);
+  if (kind === 'datetime') {
+    const time = settings.timeFormat === '24' ? task.dueTime : to12h(task.dueTime);
+    return `${formatDate(task.date, settings.dateFormat)} ${time || ''}`.trim();
+  }
+  return task.date === todayStr() ? 'Today' : formatDate(task.date, settings.dateFormat);
 }
 
 // Small, safe markdown-lite renderer for the journal day-detail READ view (settings.markdownRender).

@@ -172,11 +172,20 @@ export async function getAllTasksInRange(startDate, endDate) {
 // Every open (incomplete) task across every date -- the Tasks tab's persistent "To do"
 // list (v2.5, replaces the old today-only view + manual "carried over from yesterday"
 // strip). Oldest date first so aged tasks surface at the top instead of getting buried.
+function timeKey(t) { return t.dueTime || '99:99'; }
+
 export async function getOpenTasks() {
   const all = await db.tasks.toArray();
   return all
     .filter((t) => !t.done)
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : (a.order ?? 0) - (b.order ?? 0) || a.id - b.id));
+    .sort((a, b) => {
+      if (a.date < b.date) return -1;
+      if (a.date > b.date) return 1;
+      const at = timeKey(a), bt = timeKey(b);
+      if (at < bt) return -1;
+      if (at > bt) return 1;
+      return (a.order ?? 0) - (b.order ?? 0) || a.id - b.id;
+    });
 }
 
 // Completed tasks, newest-first by completion time -- half of the Tasks tab's "Done &
